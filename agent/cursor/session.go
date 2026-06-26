@@ -16,7 +16,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/chenhg5/cc-connect/core"
+	"github.com/YingSuiAI/connect/core"
 )
 
 // cursorSession manages multi-turn conversations with the Cursor Agent CLI.
@@ -39,8 +39,8 @@ type cursorSession struct {
 
 	// Permission handling: each Send() creates a new process whose stdin is used
 	// to respond to interaction_query permission requests.
-	stdinMu  sync.Mutex
-	stdin    io.WriteCloser // current process stdin; nil when no process is running
+	stdinMu sync.Mutex
+	stdin   io.WriteCloser // current process stdin; nil when no process is running
 
 	pendingMu sync.Mutex
 	pending   *pendingInteractionQuery // most recent unresolved interaction_query/request

@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/chenhg5/cc-connect/core"
+	"github.com/YingSuiAI/connect/core"
 
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
@@ -34,6 +34,7 @@ type Platform struct {
 	accessToken           string
 	userID                string
 	allowFrom             string
+	allowedRoomID         id.RoomID
 	shareSessionInChannel bool
 	groupReplyAll         bool
 	autoJoin              bool
@@ -74,6 +75,13 @@ func New(opts map[string]any) (core.Platform, error) {
 	userID, _ := opts["user_id"].(string)
 	allowFrom, _ := opts["allow_from"].(string)
 	core.CheckAllowFrom("matrix", allowFrom)
+	allowedRoomID, _ := opts["room_id"].(string)
+	if allowedRoomID == "" {
+		allowedRoomID, _ = opts["allowed_room_id"].(string)
+	}
+	if allowedRoomID != "" && !strings.HasPrefix(allowedRoomID, "!") {
+		return nil, fmt.Errorf("matrix: room_id must be a Matrix room ID")
+	}
 
 	groupReplyAll, _ := opts["group_reply_all"].(bool)
 	shareSession, _ := opts["share_session_in_channel"].(bool)
@@ -112,6 +120,7 @@ func New(opts map[string]any) (core.Platform, error) {
 		accessToken:           accessToken,
 		userID:                userID,
 		allowFrom:             allowFrom,
+		allowedRoomID:         id.RoomID(allowedRoomID),
 		groupReplyAll:         groupReplyAll,
 		shareSessionInChannel: shareSession,
 		autoJoin:              autoJoin,
@@ -247,6 +256,10 @@ func (p *Platform) runConnection(ctx context.Context) error {
 }
 
 func (p *Platform) handleMessage(ctx context.Context, evt *event.Event) {
+	if !p.roomAllowed(evt.RoomID) {
+		return
+	}
+
 	content, ok := evt.Content.Parsed.(*event.MessageEventContent)
 	if !ok || content == nil {
 		return
@@ -352,6 +365,9 @@ func (p *Platform) handleMessage(ctx context.Context, evt *event.Event) {
 
 func (p *Platform) handleMemberState(ctx context.Context, evt *event.Event) {
 	if !p.autoJoin {
+		return
+	}
+	if !p.roomAllowed(evt.RoomID) {
 		return
 	}
 	content, ok := evt.Content.Parsed.(*event.MemberEventContent)
@@ -631,10 +647,17 @@ func (p *Platform) ReconstructReplyCtx(sessionKey string) (any, error) {
 	if !strings.HasPrefix(roomIDStr, "!") {
 		return nil, fmt.Errorf("matrix: invalid room ID in %q", sessionKey)
 	}
+	if !p.roomAllowed(id.RoomID(roomIDStr)) {
+		return nil, fmt.Errorf("matrix: room %q is not allowed", roomIDStr)
+	}
 	return replyContext{roomID: id.RoomID(roomIDStr)}, nil
 }
 
 // --- Internal helpers ---
+
+func (p *Platform) roomAllowed(roomID id.RoomID) bool {
+	return p.allowedRoomID == "" || roomID == p.allowedRoomID
+}
 
 func (p *Platform) buildSessionKey(roomID id.RoomID, sender id.UserID) string {
 	if p.shareSessionInChannel {

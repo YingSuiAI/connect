@@ -15,7 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/chenhg5/cc-connect/core"
+	"github.com/YingSuiAI/connect/core"
 )
 
 // toolInputCacheMaxEntries caps toolInputByID growth; beyond this we evict
@@ -394,7 +394,7 @@ func (s *acpSession) maybeAbsorbCurrentModeUpdate(params json.RawMessage) {
 		return
 	}
 	var head struct {
-		Kind     string `json:"sessionUpdate"`
+		Kind          string `json:"sessionUpdate"`
 		CurrentModeID string `json:"currentModeId"`
 	}
 	if json.Unmarshal(wrap.Update, &head) != nil {

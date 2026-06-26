@@ -1100,10 +1100,10 @@ func TestProcessInteractiveEvents_NonTerminalResultContinuesTurn(t *testing.T) {
 	session := e.sessions.GetOrCreateActive(sessionKey)
 	agentSession := newControllableSession("s1")
 	state := &interactiveState{
-		agentSession:                  agentSession,
-		platform:                      p,
-		replyCtx:                      "ctx-1",
-		currentTurnUserMessageTimeMs:  100,
+		agentSession:                   agentSession,
+		platform:                       p,
+		replyCtx:                       "ctx-1",
+		currentTurnUserMessageTimeMs:   100,
 		lastCompletedUserMessageTimeMs: 0,
 	}
 	e.interactiveStates[sessionKey] = state
@@ -1163,7 +1163,7 @@ func TestProcessInteractiveEvents_AppendsReplyFooterWhenEnabled(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
 	t.Setenv("USERPROFILE", homeDir)
-	workDir := filepath.Join(homeDir, "codes", "cc-connect")
+	workDir := filepath.Join(homeDir, "codes", "direxio-connect")
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -1354,7 +1354,7 @@ func TestProcessInteractiveEvents_DoesNotAppendReplyFooterWhenDisabled(t *testin
 			model:           "gpt-5.4",
 			reasoningEffort: "xhigh",
 		},
-		workDir: filepath.Join(homeDir, "codes", "cc-connect"),
+		workDir: filepath.Join(homeDir, "codes", "direxio-connect"),
 		report: &UsageReport{
 			Buckets: []UsageBucket{{
 				Name: "Rate limit",
@@ -1396,7 +1396,7 @@ func TestProcessInteractiveEvents_ReplyFooterPrefersSessionRuntimeState(t *testi
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
 	t.Setenv("USERPROFILE", homeDir)
-	if err := os.MkdirAll(filepath.Join(homeDir, "codes", "cc-connect"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(homeDir, "codes", "direxio-connect"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1426,7 +1426,7 @@ func TestProcessInteractiveEvents_ReplyFooterPrefersSessionRuntimeState(t *testi
 	agentSession := newControllableSession("s-footer-runtime")
 	agentSession.model = "gpt-5.4"
 	agentSession.reasoningEffort = "xhigh"
-	sessionWorkDir := filepath.Join(homeDir, "codes", "cc-connect")
+	sessionWorkDir := filepath.Join(homeDir, "codes", "direxio-connect")
 	agentSession.workDir = sessionWorkDir
 	agentSession.report = &UsageReport{
 		Buckets: []UsageBucket{{
@@ -2259,13 +2259,13 @@ func TestProcessInteractiveEvents_RichCard_ToolThenNoReply(t *testing.T) {
 
 func TestAgentSystemPrompt_MentionsAttachmentSend(t *testing.T) {
 	prompt := AgentSystemPrompt()
-	if !strings.Contains(prompt, "cc-connect send --image") {
+	if !strings.Contains(prompt, "direxio-connect send --image") {
 		t.Fatalf("prompt missing image send instructions: %q", prompt)
 	}
-	if !strings.Contains(prompt, "cc-connect send --file") {
+	if !strings.Contains(prompt, "direxio-connect send --file") {
 		t.Fatalf("prompt missing file send instructions: %q", prompt)
 	}
-	if !strings.Contains(prompt, "cc-connect send --tts") {
+	if !strings.Contains(prompt, "direxio-connect send --tts") {
 		t.Fatalf("prompt missing tts send instructions: %q", prompt)
 	}
 	if !strings.Contains(prompt, "NO_REPLY") {
@@ -3626,7 +3626,7 @@ func TestCmdHelp_UsesLegacyTextOnPlatformWithoutCardSupport(t *testing.T) {
 	if got := p.sent[0]; got != e.i18n.T(MsgHelp) {
 		t.Fatalf("help text = %q, want legacy help text", got)
 	}
-	if strings.Contains(p.sent[0], "cc-connect 帮助") {
+	if strings.Contains(p.sent[0], "direxio-connect 帮助") {
 		t.Fatalf("help text = %q, should not be card title fallback", p.sent[0])
 	}
 	if !strings.Contains(p.sent[0], "/cron [add|list|exec|del|enable|disable]") {
@@ -3673,7 +3673,7 @@ func TestCmdCurrent_UsesLegacyTextOnPlatformWithoutCardSupport(t *testing.T) {
 	if !strings.Contains(p.sent[0], "Focus") {
 		t.Fatalf("current text = %q, want session name 'Focus'", p.sent[0])
 	}
-	if strings.Contains(p.sent[0], "cc-connect") {
+	if strings.Contains(p.sent[0], "direxio-connect") {
 		t.Fatalf("current text = %q, should not be card fallback title", p.sent[0])
 	}
 }
@@ -5515,7 +5515,7 @@ func TestSwitchProvider_MultiWorkspaceUsesWorkspaceSessions(t *testing.T) {
 }
 
 // TestSwitchProvider_PersistsToSession verifies that `/provider switch <name>`
-// records the choice on the Session so it survives a cc-connect process
+// records the choice on the Session so it survives a direxio-connect process
 // restart. Without this, the agent_session_id keeps the conversation alive
 // while the in-memory active provider reverts to default — see internal
 // task t-20260614-qp7xnl.
@@ -6153,7 +6153,7 @@ func TestRenderListCard_MakesEveryVisibleSessionClickable(t *testing.T) {
 
 	e := NewEngine("test", &stubListAgent{sessions: sessions}, []Platform{&stubPlatformEngine{n: "test"}}, "", LangEnglish)
 	// Register all agent sessions with the session manager so they pass the
-	// owned-session filter (simulates cc-connect having created each session).
+	// owned-session filter (simulates direxio-connect having created each session).
 	var internalIDs []string
 	for i, s := range sessions {
 		sess := e.sessions.NewSession("test:user1", "session-"+string(rune('A'+i)))
@@ -7499,7 +7499,7 @@ func TestSetupMemoryFile_WritesInstructions(t *testing.T) {
 	if !strings.Contains(string(content), ccConnectInstructionMarker) {
 		t.Error("expected instruction marker in file")
 	}
-	if !strings.Contains(string(content), "cc-connect cron add") {
+	if !strings.Contains(string(content), "direxio-connect cron add") {
 		t.Error("expected cron instructions in file")
 	}
 }
@@ -7544,7 +7544,7 @@ func TestSetupMemoryFile_RefreshesLegacyInstructions(t *testing.T) {
 	if strings.Contains(string(content), "legacy instructions") {
 		t.Fatalf("legacy instructions should be refreshed, got %q", string(content))
 	}
-	if !strings.Contains(string(content), "cc-connect send --image") {
+	if !strings.Contains(string(content), "direxio-connect send --image") {
 		t.Fatalf("expected refreshed attachment instructions, got %q", string(content))
 	}
 }
@@ -7590,7 +7590,7 @@ func TestCmdCronSetup_WritesAndReplies(t *testing.T) {
 		t.Errorf("reply = %q, want to contain filename", p.sent[0])
 	}
 	if !strings.Contains(p.sent[0], "attachment send-back") {
-		t.Errorf("reply = %q, want unified cc-connect setup success message", p.sent[0])
+		t.Errorf("reply = %q, want unified direxio-connect setup success message", p.sent[0])
 	}
 
 	content, _ := os.ReadFile(memFile)
@@ -10168,7 +10168,7 @@ func TestBuildSenderPrompt_Enabled(t *testing.T) {
 	e.SetInjectSender(true)
 
 	result := e.buildSenderPrompt("hello world", "user123", "Alice", "feishu", "feishu:channel42:user123", "")
-	expected := "[cc-connect sender_id=user123 sender_name=\"Alice\" platform=feishu chat_id=channel42]\nhello world"
+	expected := "[direxio-connect sender_id=user123 sender_name=\"Alice\" platform=feishu chat_id=channel42]\nhello world"
 	if result != expected {
 		t.Fatalf("got %q, want %q", result, expected)
 	}
@@ -10199,7 +10199,7 @@ func TestBuildSenderPrompt_EmptyUserName(t *testing.T) {
 	e.SetInjectSender(true)
 
 	result := e.buildSenderPrompt("hello", "user1", "", "feishu", "feishu:ch:user1", "")
-	expected := "[cc-connect sender_id=user1 platform=feishu chat_id=ch]\nhello"
+	expected := "[direxio-connect sender_id=user1 platform=feishu chat_id=ch]\nhello"
 	if result != expected {
 		t.Fatalf("got %q, want %q", result, expected)
 	}
@@ -10210,7 +10210,7 @@ func TestBuildSenderPrompt_NameWithSpaces(t *testing.T) {
 	e.SetInjectSender(true)
 
 	result := e.buildSenderPrompt("hi", "U999", "Jim Tang", "slack", "slack:C012:U999", "")
-	expected := "[cc-connect sender_id=U999 sender_name=\"Jim Tang\" platform=slack chat_id=C012]\nhi"
+	expected := "[direxio-connect sender_id=U999 sender_name=\"Jim Tang\" platform=slack chat_id=C012]\nhi"
 	if result != expected {
 		t.Fatalf("got %q, want %q", result, expected)
 	}
@@ -10286,7 +10286,7 @@ func TestBuildSenderPrompt_ChannelKeyOverridesSessionKey(t *testing.T) {
 	// When channelKey is provided, it should be used as chat_id instead of
 	// extracting from sessionKey (which would give "g" for dingtalk).
 	result := e.buildSenderPrompt("hello", "staff1", "Alice", "dingtalk", "dingtalk:g:cidXXX:staff1", "cidXXX")
-	expected := "[cc-connect sender_id=staff1 sender_name=\"Alice\" platform=dingtalk chat_id=cidXXX]\nhello"
+	expected := "[direxio-connect sender_id=staff1 sender_name=\"Alice\" platform=dingtalk chat_id=cidXXX]\nhello"
 	if result != expected {
 		t.Fatalf("got %q, want %q", result, expected)
 	}
@@ -10299,7 +10299,7 @@ func TestBuildSenderPrompt_FallbackWithoutChannelKey(t *testing.T) {
 	// When channelKey is empty, extractChannelID heuristic should detect
 	// the 4-segment format and extract the correct channel.
 	result := e.buildSenderPrompt("hello", "staff1", "Alice", "dingtalk", "dingtalk:g:cidXXX:staff1", "")
-	expected := "[cc-connect sender_id=staff1 sender_name=\"Alice\" platform=dingtalk chat_id=cidXXX]\nhello"
+	expected := "[direxio-connect sender_id=staff1 sender_name=\"Alice\" platform=dingtalk chat_id=cidXXX]\nhello"
 	if result != expected {
 		t.Fatalf("got %q, want %q", result, expected)
 	}
@@ -14222,7 +14222,7 @@ func TestCmdList_RealWorldLegacyDataFullFlow(t *testing.T) {
 }
 
 // TestCmdList_FilterExternalSessionsEnabled verifies that when
-// filter_external_sessions is enabled, only cc-connect-tracked sessions
+// filter_external_sessions is enabled, only direxio-connect-tracked sessions
 // appear in /list.
 func TestCmdList_FilterExternalSessionsEnabled(t *testing.T) {
 	agentSessions := []AgentSessionInfo{
@@ -14303,7 +14303,7 @@ func TestCmdList_DefaultShowsAllSessions(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 // setupFilterTestEngine creates a test Engine with 3 agent sessions, 2 tracked
-// by cc-connect and 1 external. Returns (engine, platform, userKey, agentSessions).
+// by direxio-connect and 1 external. Returns (engine, platform, userKey, agentSessions).
 func setupFilterTestEngine(t *testing.T, filterEnabled bool) (*Engine, *stubPlatformEngine, string, []AgentSessionInfo) {
 	t.Helper()
 	agentSessions := []AgentSessionInfo{
@@ -14818,8 +14818,7 @@ func TestMaybeAutoResetSessionOnIdle_NotFiredWhenUserActivityRecent(t *testing.T
 
 // TestHandlePendingPermission_StalePermissionCallback_Dropped verifies that
 // permission-callback messages synthesized by inline-button / card-action paths
-// (Telegram callback_query, Feishu card_action, QQBot interaction button, and
-// the bridge web admin card_action) are silently dropped when there is no
+// are silently dropped when there is no
 // matching interactive state or pending request — instead of letting the
 // literal "allow" / "deny" string reach the agent's prompt stream. Plain
 // text "allow" / "deny" from a real user must continue to fall through
@@ -14917,7 +14916,7 @@ func TestHandlePendingPermission_StalePermissionCallback_Dropped(t *testing.T) {
 
 // ─── Permission keyword tokenization (t-20260614-ayc85z) ────────────────
 // Group-chat platforms (wecom in particular) require the user to
-// @mention the bot for the message to reach cc-connect, so permission
+// @mention the bot for the message to reach direxio-connect, so permission
 // replies arrive as "@bot 允许" / "允许 @bot" / etc. rather than the
 // bare keyword. The matchers must tolerate the surrounding mention
 // without losing word-boundary discipline (e.g. must NOT match
@@ -14972,8 +14971,8 @@ func TestIsAllowResponse_WithMultipleMentions(t *testing.T) {
 func TestIsAllowResponse_NotInsideOtherWord(t *testing.T) {
 	cases := []string{
 		"禁止允许这种",
-		"不允许这样",   // "不允许" has its own deny entry, but as part of "不允许这样" the user clearly is denying / negating, never allowing.
-		"我不太允许这件事", // long sentence, no token equals "允许"
+		"不允许这样",                            // "不允许" has its own deny entry, but as part of "不允许这样" the user clearly is denying / negating, never allowing.
+		"我不太允许这件事",                         // long sentence, no token equals "允许"
 		"please don't allowall the things", // FieldsFunc keeps "allowall" intact, but it is the approveAll single-token form, not allow.
 		"hello world",
 		"",
@@ -15001,7 +15000,7 @@ func TestIsDenyResponse_WithMention(t *testing.T) {
 	}
 
 	negatives := []string{
-		"拒绝症患者",       // embedded — must not match
+		"拒绝症患者",        // embedded — must not match
 		"我们都不应该 hello", // unrelated
 	}
 	for _, s := range negatives {
@@ -15136,7 +15135,7 @@ func TestHandlePendingPermission_ApproveAllWithMention(t *testing.T) {
 }
 
 // ─── Audio / Video routing (t-20260615-cqjbk1) ────────────────────────
-// `cc-connect send --audio` / `--video` must reach AudioSender /
+// `direxio-connect send --audio` / `--video` must reach AudioSender /
 // VideoSender — NOT SendFile. PR #1202 made the CLI flags exist but
 // silently routed clips through SendFile, defeating the
 // transcoding-and-render-as-native-bubble pipeline.

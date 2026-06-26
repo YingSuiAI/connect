@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/chenhg5/cc-connect/core"
+	"github.com/YingSuiAI/connect/core"
 )
 
 // SentMessage captures a single outbound call from cc-connect to the platform.

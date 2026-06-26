@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -17,7 +16,7 @@ import (
 )
 
 // ProjectSettingsUpdate is passed to SetSaveProjectSettings to persist management API PATCH fields.
-// The implementation (typically in cmd/cc-connect) maps this to config.ProjectSettingsUpdate.
+// The implementation (typically in cmd/direxio-connect) maps this to config.ProjectSettingsUpdate.
 type ProjectSettingsUpdate struct {
 	Language             *string
 	AdminFrom            *string
@@ -49,8 +48,6 @@ type ManagementServer struct {
 	heartbeatScheduler *HeartbeatScheduler
 	bridgeServer       *BridgeServer
 
-	setupFeishuSave      func(req FeishuSetupSaveRequest) error
-	setupWeixinSave      func(req WeixinSetupSaveRequest) error
 	addPlatformToProject func(projectName, platType string, opts map[string]any, workDir, agentType string) error
 	removeProject        func(projectName string) error
 	saveProjectSettings  func(projectName string, update ProjectSettingsUpdate) error
@@ -60,7 +57,7 @@ type ManagementServer struct {
 	getGlobalSettings    func() map[string]any
 	saveGlobalSettings   func(map[string]any) error
 
-	// Global provider callbacks (set by cmd/cc-connect)
+	// Global provider callbacks (set by cmd/direxio-connect)
 	listGlobalProviders  func() ([]GlobalProviderInfo, error)
 	addGlobalProvider    func(GlobalProviderInfo) error
 	updateGlobalProvider func(name string, info GlobalProviderInfo) error
@@ -93,13 +90,6 @@ func (m *ManagementServer) SetCronScheduler(cs *CronScheduler)           { m.cro
 func (m *ManagementServer) SetTimerScheduler(ts *TimerScheduler)         { m.timerScheduler = ts }
 func (m *ManagementServer) SetHeartbeatScheduler(hs *HeartbeatScheduler) { m.heartbeatScheduler = hs }
 func (m *ManagementServer) SetBridgeServer(bs *BridgeServer)             { m.bridgeServer = bs }
-func (m *ManagementServer) SetSetupFeishuSave(fn func(FeishuSetupSaveRequest) error) {
-	m.setupFeishuSave = fn
-}
-func (m *ManagementServer) SetSetupWeixinSave(fn func(WeixinSetupSaveRequest) error) {
-	m.setupWeixinSave = fn
-}
-
 func (m *ManagementServer) SetAddPlatformToProject(fn func(string, string, map[string]any, string, string) error) {
 	m.addPlatformToProject = fn
 }
@@ -145,10 +135,10 @@ type GlobalProviderInfo struct {
 		Model string `json:"model"`
 		Alias string `json:"alias,omitempty"`
 	} `json:"models,omitempty"`
-	Endpoints       map[string]string              `json:"endpoints,omitempty"`
-	AgentModels     map[string]string              `json:"agent_models,omitempty"`
-	AgentModelLists map[string][]GlobalModelEntry   `json:"agent_model_lists,omitempty"`
-	Codex           *GlobalCodexConfig              `json:"codex,omitempty"`
+	Endpoints       map[string]string             `json:"endpoints,omitempty"`
+	AgentModels     map[string]string             `json:"agent_models,omitempty"`
+	AgentModelLists map[string][]GlobalModelEntry `json:"agent_model_lists,omitempty"`
+	Codex           *GlobalCodexConfig            `json:"codex,omitempty"`
 }
 
 // GlobalModelEntry is a model entry inside AgentModelLists.
@@ -232,14 +222,6 @@ func (m *ManagementServer) buildHandler(mux *http.ServeMux) http.Handler {
 	mux.HandleFunc(prefix+"/cron", m.wrap(m.handleCron))
 	mux.HandleFunc(prefix+"/cron/", m.wrap(m.handleCronByID))
 
-	// Setup (QR onboarding for feishu/weixin)
-	mux.HandleFunc(prefix+"/setup/feishu/begin", m.wrap(m.handleSetupFeishuBegin))
-	mux.HandleFunc(prefix+"/setup/feishu/poll", m.wrap(m.handleSetupFeishuPoll))
-	mux.HandleFunc(prefix+"/setup/feishu/save", m.wrap(m.handleSetupFeishuSave))
-	mux.HandleFunc(prefix+"/setup/weixin/begin", m.wrap(m.handleSetupWeixinBegin))
-	mux.HandleFunc(prefix+"/setup/weixin/poll", m.wrap(m.handleSetupWeixinPoll))
-	mux.HandleFunc(prefix+"/setup/weixin/save", m.wrap(m.handleSetupWeixinSave))
-
 	// Global Providers
 	mux.HandleFunc(prefix+"/providers", m.wrap(m.handleGlobalProviders))
 	mux.HandleFunc(prefix+"/providers/", m.wrap(m.handleGlobalProviderRoutes))
@@ -251,58 +233,19 @@ func (m *ManagementServer) buildHandler(mux *http.ServeMux) http.Handler {
 	// Bridge
 	mux.HandleFunc(prefix+"/bridge/adapters", m.wrap(m.handleBridgeAdapters))
 
-	// Static file serving for cc-connect-web (SPA)
-	return m.withStaticFallback(mux)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if m.bridgeServer != nil && r.URL.Path == m.bridgeServer.path {
+			m.bridgeServer.handleWS(w, r)
+			return
+		}
+		mux.ServeHTTP(w, r)
+	})
 }
 
 func (m *ManagementServer) Stop() {
 	if m.server != nil {
 		m.server.Close()
 	}
-}
-
-// withStaticFallback wraps the API mux with a file server for the web UI.
-// API requests (/api/) go to the mux; everything else tries embedded static
-// files, falling back to index.html for SPA routing.
-func (m *ManagementServer) withStaticFallback(apiMux *http.ServeMux) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/api/") {
-			apiMux.ServeHTTP(w, r)
-			return
-		}
-		if m.bridgeServer != nil && r.URL.Path == m.bridgeServer.path {
-			m.bridgeServer.handleWS(w, r)
-			return
-		}
-		assets := GetWebAssets()
-		if assets == nil {
-			apiMux.ServeHTTP(w, r)
-			return
-		}
-		m.setCORS(w, r)
-		if r.Method == http.MethodOptions {
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		// Try to serve the exact file from the embedded FS.
-		urlPath := strings.TrimPrefix(r.URL.Path, "/")
-		if urlPath == "" {
-			urlPath = "index.html"
-		}
-		if f, err := assets.Open(urlPath); err == nil {
-			f.Close()
-			http.FileServer(http.FS(assets)).ServeHTTP(w, r)
-			return
-		}
-		// SPA fallback: serve index.html for any non-file route.
-		indexData, err := fs.ReadFile(assets, "index.html")
-		if err != nil {
-			apiMux.ServeHTTP(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_, _ = w.Write(indexData)
-	})
 }
 
 // ── Auth & Middleware ──────────────────────────────────────────
@@ -1905,10 +1848,10 @@ func (m *ManagementServer) handleCCSwitchProviders(w http.ResponseWriter, r *htt
 // applying per-agent-type overrides for base_url, model, and models.
 func resolveGlobalProviderForAgent(g GlobalProviderInfo, agentType string) ProviderConfig {
 	pc := ProviderConfig{
-		Name:   g.Name,
-		APIKey: g.APIKey,
+		Name:    g.Name,
+		APIKey:  g.APIKey,
 		BaseURL: g.BaseURL,
-		Model:  g.Model,
+		Model:   g.Model,
 	}
 	if ep, ok := g.Endpoints[agentType]; ok && ep != "" {
 		pc.BaseURL = ep

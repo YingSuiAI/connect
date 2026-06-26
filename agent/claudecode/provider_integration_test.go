@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chenhg5/cc-connect/config"
-	"github.com/chenhg5/cc-connect/core"
+	"github.com/YingSuiAI/connect/config"
+	"github.com/YingSuiAI/connect/core"
 )
 
 // These integration tests use real provider credentials from ~/.cc-connect/config.toml.
@@ -160,7 +160,7 @@ func TestIntegration_ProviderSwitch_SessionStartModel(t *testing.T) {
 				providers: providers,
 				activeIdx: -1,
 				workDir:   workDir,
-				cmd:    cliBin,
+				cmd:       cliBin,
 			}
 			a.SetActiveProvider(prov.Name)
 

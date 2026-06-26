@@ -18,7 +18,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/chenhg5/cc-connect/core"
+	"github.com/YingSuiAI/connect/core"
 )
 
 // antigravitySession manages multi-turn conversations with the Antigravity CLI (agy).

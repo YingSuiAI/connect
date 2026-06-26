@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/chenhg5/cc-connect/core"
+	"github.com/YingSuiAI/connect/core"
 )
 
 func TestLSPWriter_WriteMessage(t *testing.T) {

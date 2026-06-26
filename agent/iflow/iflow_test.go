@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/chenhg5/cc-connect/core"
+	"github.com/YingSuiAI/connect/core"
 )
 
 func TestNormalizeMode(t *testing.T) {

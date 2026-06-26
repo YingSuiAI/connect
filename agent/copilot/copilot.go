@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/chenhg5/cc-connect/core"
+	"github.com/YingSuiAI/connect/core"
 )
 
 func init() {
@@ -198,7 +198,7 @@ type probeSession struct {
 }
 
 type probeSnapshot struct {
-	cmd  string
+	cmd     string
 	workDir string
 	env     []string
 }

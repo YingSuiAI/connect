@@ -16,10 +16,10 @@ import (
 	"syscall"
 	"time"
 
-	ccconnect "github.com/chenhg5/cc-connect"
-	"github.com/chenhg5/cc-connect/config"
-	"github.com/chenhg5/cc-connect/core"
-	"github.com/chenhg5/cc-connect/daemon"
+	ccconnect "github.com/YingSuiAI/connect"
+	"github.com/YingSuiAI/connect/config"
+	"github.com/YingSuiAI/connect/core"
+	"github.com/YingSuiAI/connect/daemon"
 	// Agent and platform imports are in separate plugin_*.go files
 	// controlled by build tags. See Makefile for selective compilation.
 )
@@ -36,7 +36,7 @@ var (
 var globalAPIServer *core.APIServer
 
 // defaultResetOnIdleMins is applied when a project does not set
-// reset_on_idle_mins. After this many minutes of user inactivity, cc-connect
+// reset_on_idle_mins. After this many minutes of user inactivity, direxio-connect
 // rotates to a fresh session for the next message instead of resuming the
 // previous transcript via --continue. This avoids "context drift" where stale
 // chat history (failed commands, debugging noise, abandoned tangents) is
@@ -243,17 +243,8 @@ func main() {
 		case "daemon":
 			runDaemon(os.Args[2:])
 			return
-		case "feishu":
-			runFeishu(os.Args[2:])
-			return
-		case "weixin":
-			runWeixin(os.Args[2:])
-			return
 		case "doctor":
 			runDoctor(os.Args[2:])
-			return
-		case "web":
-			runWeb(os.Args[2:])
 			return
 		}
 	}
@@ -279,10 +270,8 @@ func main() {
 		slog.SetDefault(slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	}
 
-	configFlag := flag.String("config", "", "path to config file (default: ./config.toml or ~/.cc-connect/config.toml)")
+	configFlag := flag.String("config", "", "path to config file (default: ./config.toml or ~/.direxio-connect/config.toml)")
 	showVersion := flag.Bool("version", false, "print version and exit")
-	observeFlag := flag.Bool("observe", false, "observe native terminal Claude Code sessions and forward to Slack")
-	observeChannel := flag.String("observe-channel", "", "Slack channel ID to forward terminal observations to (requires --observe)")
 	forceFlag := flag.Bool("force", false, "kill any existing instance with the same config before starting")
 	logMaxSizeFlag := flag.String("log-max-size", "", "max bytes for the rotating log file (e.g. 10MB, 512K, 10485760); overrides CC_LOG_MAX_SIZE env var (default: 10MB)")
 	logMaxBackupsFlag := flag.Int("log-max-backups", 0, "number of rotated log files to retain (.log.1 .. .log.N); overrides CC_LOG_MAX_BACKUPS env var (default: 3)")
@@ -304,11 +293,11 @@ func main() {
 	}
 
 	if *showVersion {
-		fmt.Printf("cc-connect %s\ncommit:  %s\nbuilt:   %s\n", version, commit, buildTime)
+		fmt.Printf("direxio-connect %s\ncommit:  %s\nbuilt:   %s\n", version, commit, buildTime)
 		return
 	}
 
-	core.VersionInfo = fmt.Sprintf("cc-connect %s\ncommit: %s\nbuilt: %s", version, commit, buildTime)
+	core.VersionInfo = fmt.Sprintf("direxio-connect %s\ncommit: %s\nbuilt: %s", version, commit, buildTime)
 	core.CurrentVersion = version
 	core.CurrentCommit = commit
 	core.CurrentBuildTime = buildTime
@@ -337,7 +326,7 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Printf("Created default config at %s\n", configPath)
-		fmt.Println("Please edit this file to add your agent and platform credentials, then run cc-connect again.")
+		fmt.Println("Please edit this file to add your agent and platform credentials, then run direxio-connect again.")
 		os.Exit(0)
 	}
 
@@ -353,7 +342,7 @@ func main() {
 	if len(cfg.Projects) == 0 {
 		fmt.Fprintf(os.Stderr, "Error: no projects configured in %s\n", configPath)
 		fmt.Fprintln(os.Stderr, "Add at least one [[project]] section to your config.toml, or run:")
-		fmt.Fprintln(os.Stderr, "  cc-connect init")
+		fmt.Fprintln(os.Stderr, "  direxio-connect init")
 		os.Exit(1)
 	}
 
@@ -482,42 +471,6 @@ func main() {
 				engine.SetSkipGit(*proj.SkipGit)
 			}
 			slog.Info("multi-workspace mode enabled", "project", proj.Name, "base_dir", baseDir)
-		}
-
-		// Wire terminal observation (--observe / [projects.observe])
-		observeEnabled := *observeFlag
-		obsChan := *observeChannel
-		if proj.Observe != nil {
-			if !observeEnabled && proj.Observe.Enabled {
-				observeEnabled = true
-			}
-			if obsChan == "" && proj.Observe.Channel != "" {
-				obsChan = proj.Observe.Channel
-			}
-		}
-		if observeEnabled {
-			if obsChan == "" {
-				slog.Error("observe: channel is required (use --observe-channel or set channel in [projects.observe])")
-				os.Exit(1)
-			}
-			hasSlack := false
-			for _, p := range platforms {
-				if p.Name() == "slack" {
-					hasSlack = true
-					break
-				}
-			}
-			if !hasSlack {
-				slog.Warn("observe requires a Slack platform; ignoring")
-			} else {
-				projectDir := resolveClaudeProjectDir(workDir)
-				if projectDir == "" {
-					slog.Warn("observe: could not find Claude Code project directory", "workDir", workDir)
-				} else {
-					sessionKey := fmt.Sprintf("slack:%s", obsChan)
-					engine.SetObserveConfig(projectDir, sessionKey)
-				}
-			}
 		}
 
 		// Wire global custom commands
@@ -944,27 +897,6 @@ func main() {
 			return reloadConfig(configPath, capturedProjName, capturedEngine)
 		})
 
-		// Wire /web command callbacks
-		engine.SetWebSetupFunc(func() (int, string, bool, error) {
-			mgmtToken := core.GenerateToken(16)
-			bridgeToken := core.GenerateToken(16)
-			result, err := config.EnableWebAdmin(mgmtToken, bridgeToken)
-			if err != nil {
-				return 0, "", false, err
-			}
-			return result.ManagementPort, result.ManagementToken, !result.AlreadyEnabled, nil
-		})
-		engine.SetWebStatusFunc(func() string {
-			if cfg.Management.Enabled == nil || !*cfg.Management.Enabled {
-				return ""
-			}
-			port := cfg.Management.Port
-			if port == 0 {
-				port = 9820
-			}
-			return fmt.Sprintf("http://localhost:%d", port)
-		})
-
 		engines = append(engines, engine)
 		effectiveWorkDirs = append(effectiveWorkDirs, effectiveWorkDir)
 	}
@@ -1115,49 +1047,6 @@ func main() {
 		if bridgeSrv != nil {
 			mgmtSrv.SetBridgeServer(bridgeSrv)
 		}
-		mgmtSrv.SetSetupFeishuSave(func(req core.FeishuSetupSaveRequest) error {
-			platType := req.PlatformType
-			if platType == "" {
-				platType = "feishu"
-			}
-			_, err := config.EnsureProjectWithFeishuPlatform(config.EnsureProjectWithFeishuOptions{
-				ProjectName:  req.ProjectName,
-				PlatformType: platType,
-				WorkDir:      req.WorkDir,
-				AgentType:    req.AgentType,
-			})
-			if err != nil {
-				return fmt.Errorf("ensure project: %w", err)
-			}
-			_, err = config.SaveFeishuPlatformCredentials(config.FeishuCredentialUpdateOptions{
-				ProjectName:       req.ProjectName,
-				PlatformType:      platType,
-				AppID:             req.AppID,
-				AppSecret:         req.AppSecret,
-				OwnerOpenID:       req.OwnerOpenID,
-				SetAllowFromEmpty: true,
-			})
-			return err
-		})
-		mgmtSrv.SetSetupWeixinSave(func(req core.WeixinSetupSaveRequest) error {
-			_, err := config.EnsureProjectWithWeixinPlatform(config.EnsureProjectWithWeixinOptions{
-				ProjectName: req.ProjectName,
-				WorkDir:     req.WorkDir,
-				AgentType:   req.AgentType,
-			})
-			if err != nil {
-				return fmt.Errorf("ensure project: %w", err)
-			}
-			_, err = config.SaveWeixinPlatformCredentials(config.WeixinCredentialUpdateOptions{
-				ProjectName:       req.ProjectName,
-				Token:             req.Token,
-				BaseURL:           req.BaseURL,
-				AccountID:         req.IlinkBotID,
-				ScannedUserID:     req.IlinkUserID,
-				SetAllowFromEmpty: true,
-			})
-			return err
-		})
 		mgmtSrv.SetAddPlatformToProject(func(projectName, platType string, opts map[string]any, workDir, agentType string) error {
 			if opts == nil {
 				opts = map[string]any{}
@@ -1303,12 +1192,12 @@ func main() {
 		apiSrv.Start()
 	}
 
-	slog.Info("cc-connect is running", "projects", len(engines))
+	slog.Info("direxio-connect is running", "projects", len(engines))
 
 	// After startup, check if we were restarted and queue the success
 	// notification. The engine dispatches it on the first OnPlatformReady
 	// for the target platform (or with a 10s safety timeout), so async
-	// platforms that need 2-3s to actually connect (e.g. Telegram) do not
+	// bridge clients that need a short connection window do not
 	// silently drop the notify. See issue #1383.
 	if notify := core.ConsumeRestartNotify(cfg.DataDir); notify != nil {
 		slog.Info("post-restart: queuing success notification", "platform", notify.Platform, "session", notify.SessionKey)
@@ -1475,7 +1364,7 @@ func resolveClaudeProjectDir(workDir string) string {
 		return ""
 	}
 	// Claude Code encodes paths by replacing os.PathSeparator with "-"
-	// e.g. /home/leigh/workspace/cc-connect -> -home-leigh-workspace-cc-connect
+	// e.g. /home/leigh/workspace/direxio-connect -> -home-leigh-workspace-direxio-connect
 	encoded := strings.ReplaceAll(workDir, string(os.PathSeparator), "-")
 	dir := filepath.Join(homeDir, ".claude", "projects", encoded)
 	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
@@ -1485,7 +1374,7 @@ func resolveClaudeProjectDir(workDir string) string {
 }
 
 // resolveConfigPath determines which config file to use.
-// Priority: explicit flag → ./config.toml → ~/.cc-connect/config.toml
+// Priority: explicit flag → ./config.toml → ~/.direxio-connect/config.toml
 func resolveConfigPath(explicit string) string {
 	if explicit != "" {
 		return explicit
@@ -1494,7 +1383,7 @@ func resolveConfigPath(explicit string) string {
 		return "config.toml"
 	}
 	if home, err := os.UserHomeDir(); err == nil {
-		return filepath.Join(home, ".cc-connect", "config.toml")
+		return filepath.Join(home, ".direxio-connect", "config.toml")
 	}
 	return "config.toml"
 }
@@ -1504,8 +1393,8 @@ func bootstrapConfig(path string) error {
 		return err
 	}
 
-	const tmpl = `# cc-connect configuration
-# Docs: https://github.com/chenhg5/cc-connect
+	const tmpl = `# direxio-connect configuration
+# Docs: https://github.com/YingSuiAI/connect
 
 [log]
 level = "info"
@@ -1521,18 +1410,17 @@ work_dir = "/path/to/your/project"
 mode = "default"
 # model = "claude-sonnet-4-20250514"
 
-# --- Choose at least one platform below ---
+# --- Direxio Matrix agents room ---
 
-# Feishu / Lark (WebSocket, no public IP needed)
 [[projects.platforms]]
-type = "feishu"
+type = "matrix"
 
 [projects.platforms.options]
-app_id = "your-feishu-app-id"
-app_secret = "your-feishu-app-secret"
-
-# For more platforms (DingTalk, Telegram, Slack, Discord, LINE, WeChat Work)
-# see: https://github.com/chenhg5/cc-connect/blob/main/config.example.toml
+homeserver = "http://127.0.0.1:8008"
+access_token = "your-agent-matrix-access-token"
+user_id = "@agent:example.com"
+device_id = "DIREXIO_CC_CONNECT"
+room_id = "!your-real-agent-room:example.com"
 `
 	return os.WriteFile(path, []byte(tmpl), 0o644)
 }
@@ -1553,25 +1441,25 @@ func printUsage() {
 | (_| (_|_____|  (_| (_) | | | | | | |  __/ (__| |_
  \___\__|      \___\___/|_| |_|_| |_|\___|\___|\__|  %s%s
 
-  Bridge your messaging platforms to local AI coding agents.
+  Bridge a Direxio Matrix agents room to local AI coding agents.
   Supports: Claude Code, Codex, Cursor, Gemini CLI, Qoder CLI, OpenCode
-  Platforms: Feishu, Telegram, Slack, DingTalk, Discord, LINE, WeChat Work, Weixin, QQ, QQ Bot
+  Platform: Direxio Matrix
 
-  GitHub:  https://github.com/chenhg5/cc-connect
-  Docs:    https://github.com/chenhg5/cc-connect/blob/main/INSTALL.md
+  GitHub:  https://github.com/YingSuiAI/connect
+  Docs:    https://github.com/YingSuiAI/connect/blob/main/INSTALL.md
 
 Usage:
-  cc-connect [flags]
-  cc-connect <command> [args]
+  direxio-connect [flags]
+  direxio-connect <command> [args]
 
 Flags:
-  --config <path>    Path to config file (default: ./config.toml or ~/.cc-connect/config.toml)
+  --config <path>    Path to config file (default: ./config.toml or ~/.direxio-connect/config.toml)
   --force            Kill any existing instance with the same config before starting
   --version          Print version and exit
   --help             Show this help message
 
 Commands:
-  daemon             Manage cc-connect as a background service (systemd/launchd/schtasks)
+  daemon             Manage direxio-connect as a background service (systemd/launchd/schtasks)
     install          Install and start the daemon service
     uninstall        Remove the daemon service
     start            Start the daemon
@@ -1604,16 +1492,6 @@ Commands:
     remove           Remove a provider (--project, --name)
     import           Import providers from cc-switch
 
-  feishu             Setup Feishu/Lark bot credentials
-    setup            Smart setup (QR create or bind when --app is provided)
-    new              Force QR onboarding to create a new bot
-    bind             Bind existing app_id/app_secret
-
-  weixin             Setup Weixin personal (ilink) via QR or token
-    setup            QR login, or bind when --token is provided
-    new              Force QR login
-    bind             Bind existing ilink bot token
-
   config             Manage configuration
     example          Print a complete annotated config.toml example
     format           Format the config file (alias: fmt)
@@ -1624,17 +1502,15 @@ Commands:
   config-example     (deprecated: use 'config example' instead)
 
 Examples:
-  cc-connect                          Start with default config
-  cc-connect --config /path/to.toml   Start with a specific config file
-  cc-connect daemon install           Install as a system service
-  cc-connect daemon logs -f           Follow daemon logs
-  cc-connect send -m "hello"          Send a message to the active session
-  cc-connect cron list                List all scheduled tasks
-  cc-connect feishu setup             Setup Feishu/Lark bot credentials
-  cc-connect weixin setup             Setup Weixin (ilink) with QR or --token
-  cc-connect update                   Update to the latest version
-  cc-connect config format            Format the config file
-  cc-connect config example > c.toml  Save example config to a file
+  direxio-connect                          Start with default config
+  direxio-connect --config /path/to.toml   Start with a specific config file
+  direxio-connect daemon install           Install as a system service
+  direxio-connect daemon logs -f           Follow daemon logs
+  direxio-connect send -m "hello"          Send a message to the active session
+  direxio-connect cron list                List all scheduled tasks
+  direxio-connect update                   Update to the latest version
+  direxio-connect config format            Format the config file
+  direxio-connect config example > c.toml  Save example config to a file
 
 `, v, updateHint)
 }
@@ -2008,4 +1884,13 @@ func derefInt(v *int) int {
 		return 0
 	}
 	return *v
+}
+
+func containsString(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }

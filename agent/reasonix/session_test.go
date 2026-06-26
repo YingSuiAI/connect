@@ -1,4 +1,4 @@
-﻿package reasonix
+package reasonix
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chenhg5/cc-connect/core"
+	"github.com/YingSuiAI/connect/core"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

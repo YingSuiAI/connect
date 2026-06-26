@@ -4,7 +4,7 @@ import (
 	"context"
 	"io"
 
-	"github.com/chenhg5/cc-connect/core"
+	"github.com/YingSuiAI/connect/core"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -313,23 +313,23 @@ type MockAgentFull struct {
 
 func NewMockAgentFull(name string) *MockAgentFull {
 	m := &MockAgentFull{
-		MockAgent:                    new(MockAgent),
-		MockAgentWithProviders:       new(MockAgentWithProviders),
-		MockAgentWithModel:           new(MockAgentWithModel),
-		MockAgentWithMode:            new(MockAgentWithMode),
-		MockAgentWithToolAuth:        new(MockAgentWithToolAuth),
-		MockAgentWithHistory:         new(MockAgentWithHistory),
-		MockAgentWithUsage:           new(MockAgentWithUsage),
-		MockAgentWithMemory:          new(MockAgentWithMemory),
-		MockAgentWithWorkDir:         new(MockAgentWithWorkDir),
-		MockAgentWithSkill:           new(MockAgentWithSkill),
-		MockAgentWithCommand:         new(MockAgentWithCommand),
+		MockAgent:                      new(MockAgent),
+		MockAgentWithProviders:         new(MockAgentWithProviders),
+		MockAgentWithModel:             new(MockAgentWithModel),
+		MockAgentWithMode:              new(MockAgentWithMode),
+		MockAgentWithToolAuth:          new(MockAgentWithToolAuth),
+		MockAgentWithHistory:           new(MockAgentWithHistory),
+		MockAgentWithUsage:             new(MockAgentWithUsage),
+		MockAgentWithMemory:            new(MockAgentWithMemory),
+		MockAgentWithWorkDir:           new(MockAgentWithWorkDir),
+		MockAgentWithSkill:             new(MockAgentWithSkill),
+		MockAgentWithCommand:           new(MockAgentWithCommand),
 		MockAgentWithContextCompressor: new(MockAgentWithContextCompressor),
-		MockAgentWithReasoning:       new(MockAgentWithReasoning),
-		MockAgentWithSessionDeleter:  new(MockAgentWithSessionDeleter),
-		MockAgentWithSystemPrompt:    new(MockAgentWithSystemPrompt),
-		MockAgentWithPlatformPrompt:  new(MockAgentWithPlatformPrompt),
-		MockAgentWithSessionEnv:      new(MockAgentWithSessionEnv),
+		MockAgentWithReasoning:         new(MockAgentWithReasoning),
+		MockAgentWithSessionDeleter:    new(MockAgentWithSessionDeleter),
+		MockAgentWithSystemPrompt:      new(MockAgentWithSystemPrompt),
+		MockAgentWithPlatformPrompt:    new(MockAgentWithPlatformPrompt),
+		MockAgentWithSessionEnv:        new(MockAgentWithSessionEnv),
 	}
 	m.MockAgent.On("Name").Return(name)
 	return m

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chenhg5/cc-connect/core"
+	"github.com/YingSuiAI/connect/core"
 )
 
 func TestHandleResultParsesUsage(t *testing.T) {
@@ -177,7 +177,7 @@ func TestHandleAssistantCapturesPerSubCallUsage(t *testing.T) {
 		"session_id": "test-session",
 		"usage": map[string]any{
 			"input_tokens":                float64(130),
-			"output_tokens":               float64(648),       // real turn total
+			"output_tokens":               float64(648), // real turn total
 			"cache_creation_input_tokens": float64(2_000),
 			"cache_read_input_tokens":     float64(8_000_000), // summed, would inflate ctx
 		},
@@ -590,9 +590,9 @@ func makeFiller(n int) string {
 // assistant text reaches the user.
 //
 // Cases covered:
-//  - string content (plain text result)
-//  - array content (Anthropic SDK multi-block: [{type:"text", text:"..."}])
-//  - is_error=true (exit code 1, success=false)
+//   - string content (plain text result)
+//   - array content (Anthropic SDK multi-block: [{type:"text", text:"..."}])
+//   - is_error=true (exit code 1, success=false)
 func TestHandleUserEmitsToolResult(t *testing.T) {
 	cases := []struct {
 		name        string
@@ -608,10 +608,10 @@ func TestHandleUserEmitsToolResult(t *testing.T) {
 				"message": map[string]any{
 					"content": []any{
 						map[string]any{
-							"type":          "tool_result",
-							"tool_use_id":   "toolu_abc",
-							"is_error":      false,
-							"content":       "command output here",
+							"type":        "tool_result",
+							"tool_use_id": "toolu_abc",
+							"is_error":    false,
+							"content":     "command output here",
 						},
 					},
 				},

@@ -13,12 +13,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chenhg5/cc-connect/agent/claudecode"
-	"github.com/chenhg5/cc-connect/agent/codex"
-	"github.com/chenhg5/cc-connect/agent/cursor"
-	"github.com/chenhg5/cc-connect/agent/gemini"
-	"github.com/chenhg5/cc-connect/agent/opencode"
-	"github.com/chenhg5/cc-connect/core"
+	"github.com/YingSuiAI/connect/agent/claudecode"
+	"github.com/YingSuiAI/connect/agent/codex"
+	"github.com/YingSuiAI/connect/agent/cursor"
+	"github.com/YingSuiAI/connect/agent/gemini"
+	"github.com/YingSuiAI/connect/agent/opencode"
+	"github.com/YingSuiAI/connect/core"
 )
 
 // skipUnlessAgentReady skips the test when the agent CLI binary is not
@@ -70,15 +70,15 @@ type mockPlatform struct {
 }
 
 type mockMessage struct {
-	Content string
+	Content  string
 	ReplyCtx any
-	Images  []core.ImageAttachment
-	Audio   []core.FileAttachment
+	Images   []core.ImageAttachment
+	Audio    []core.FileAttachment
 }
 
-func (m *mockPlatform) Name() string                          { return "mock" }
-func (m *mockPlatform) Start(h core.MessageHandler) error    { return nil }
-func (m *mockPlatform) Stop() error                           { return nil }
+func (m *mockPlatform) Name() string                      { return "mock" }
+func (m *mockPlatform) Start(h core.MessageHandler) error { return nil }
+func (m *mockPlatform) Stop() error                       { return nil }
 func (m *mockPlatform) Send(ctx context.Context, replyCtx any, content string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

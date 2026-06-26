@@ -1,26 +1,26 @@
-# cc-connect
+# direxio-connect
 
-Bridge local AI coding agents (Claude Code, Cursor, Gemini CLI, Codex) to messaging platforms (Feishu/Lark, DingTalk, Slack, Telegram, Discord, LINE, WeChat Work).
+Bridge local AI coding agents to a Direxio Matrix agents room.
 
 Chat with your AI dev assistant from anywhere.
 
 ## Install
 
 ```bash
-npm install -g cc-connect
+npm install -g @direxio/connent
 ```
 
 ## Usage
 
 ```bash
 # Create config
-cc-connect --version
+direxio-connect --version
 
 # Edit config.toml, then run
-cc-connect
-cc-connect -config /path/to/config.toml
+direxio-connect
+direxio-connect -config /path/to/config.toml
 ```
 
 ## Documentation
 
-See full documentation at: https://github.com/chenhg5/cc-connect
+See full documentation at: https://github.com/YingSuiAI/connect

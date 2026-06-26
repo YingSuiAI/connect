@@ -11,11 +11,9 @@ import (
 )
 
 const (
-	defaultSkillPresetsURL         = "https://raw.githubusercontent.com/chenhg5/cc-connect/main/skill-presets.json"
-	fallbackSkillPresetsURL        = "https://gitee.com/chenhg5/cc-connect/raw/main/skill-presets.json"
-	skillPresetsCacheTTL           = 6 * time.Hour
-	skillPresetsHTTPTimeout        = 15 * time.Second
-	skillPresetsFallbackHTTPTimeout = 10 * time.Second
+	defaultSkillPresetsURL  = "https://raw.githubusercontent.com/YingSuiAI/connect/main/skill-presets.json"
+	skillPresetsCacheTTL    = 6 * time.Hour
+	skillPresetsHTTPTimeout = 15 * time.Second
 )
 
 // SkillPreset describes a recommended skill available from the remote presets list.
@@ -36,16 +34,16 @@ type SkillPreset struct {
 
 // SkillSource describes where the skill is hosted / provided from.
 type SkillSource struct {
-	Provider string `json:"provider"`           // e.g. "github", "skills.sh", "npm"
-	Name     string `json:"name,omitempty"`      // display name, e.g. "GitHub", "Skills.sh"
-	URL      string `json:"url,omitempty"`        // provider home page
+	Provider string `json:"provider"`       // e.g. "github", "skills.sh", "npm"
+	Name     string `json:"name,omitempty"` // display name, e.g. "GitHub", "Skills.sh"
+	URL      string `json:"url,omitempty"`  // provider home page
 }
 
 // SkillPricing describes the pricing model for a skill.
 type SkillPricing struct {
 	Type     string  `json:"type"`               // "free", "paid", "freemium"
-	Price    float64 `json:"price,omitempty"`     // 0 for free
-	Currency string  `json:"currency,omitempty"`  // "USD", "CNY", etc.
+	Price    float64 `json:"price,omitempty"`    // 0 for free
+	Currency string  `json:"currency,omitempty"` // "USD", "CNY", etc.
 }
 
 // SkillPresetsResponse is the top-level JSON schema for remote skill presets.
@@ -99,12 +97,8 @@ func (c *skillPresetsCache) fetch() (*SkillPresetsResponse, error) {
 
 	result, err := fetchSkillPresetsFromURL(primaryURL, skillPresetsHTTPTimeout)
 	if err != nil {
-		slog.Warn("primary skill presets fetch failed, trying fallback", "url", primaryURL, "error", err)
-		result, err = fetchSkillPresetsFromURL(fallbackSkillPresetsURL, skillPresetsFallbackHTTPTimeout)
-	}
-	if err != nil {
 		if c.data != nil {
-			slog.Warn("all skill presets sources failed, using stale cache", "error", err)
+			slog.Warn("skill presets fetch failed, using stale cache", "url", primaryURL, "error", err)
 			return c.data, nil
 		}
 		return nil, fmt.Errorf("fetch skill presets: %w", err)

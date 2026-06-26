@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/chenhg5/cc-connect/core"
+	"github.com/YingSuiAI/connect/core"
 )
 
 // listSessionsProbeTimeout bounds how long we wait for a one-shot

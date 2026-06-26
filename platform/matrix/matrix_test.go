@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chenhg5/cc-connect/core"
+	"github.com/YingSuiAI/connect/core"
 
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
@@ -131,6 +131,7 @@ func TestNew_AllOptions(t *testing.T) {
 		"access_token":             "tok",
 		"user_id":                  "@bot:matrix.org",
 		"allow_from":               "@alice:matrix.org",
+		"room_id":                  "!agent:matrix.org",
 		"auto_join":                false,
 		"share_session_in_channel": true,
 		"group_reply_all":          true,
@@ -146,11 +147,25 @@ func TestNew_AllOptions(t *testing.T) {
 	if plat.allowFrom != "@alice:matrix.org" {
 		t.Errorf("allowFrom = %q", plat.allowFrom)
 	}
+	if plat.allowedRoomID != "!agent:matrix.org" {
+		t.Errorf("allowedRoomID = %q", plat.allowedRoomID)
+	}
 	if plat.shareSessionInChannel != true {
 		t.Error("shareSessionInChannel should be true")
 	}
 	if plat.groupReplyAll != true {
 		t.Error("groupReplyAll should be true")
+	}
+}
+
+func TestNew_InvalidRoomID(t *testing.T) {
+	_, err := New(map[string]any{
+		"homeserver":   "https://matrix.org",
+		"access_token": "tok",
+		"room_id":      "not-a-room",
+	})
+	if err == nil || !strings.Contains(err.Error(), "room_id must be a Matrix room ID") {
+		t.Fatalf("expected room_id error, got %v", err)
 	}
 }
 
@@ -310,6 +325,25 @@ func TestReconstructReplyCtx(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestReconstructReplyCtxRejectsDisallowedRoom(t *testing.T) {
+	p := &Platform{allowedRoomID: "!allowed:server"}
+
+	if _, err := p.ReconstructReplyCtx("matrix:!other:server"); err == nil {
+		t.Fatal("expected disallowed room error")
+	}
+	rctx, err := p.ReconstructReplyCtx("matrix:!allowed:server")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	rc, ok := rctx.(replyContext)
+	if !ok {
+		t.Fatal("expected replyContext")
+	}
+	if rc.roomID != "!allowed:server" {
+		t.Fatalf("roomID = %q, want !allowed:server", rc.roomID)
 	}
 }
 
@@ -564,6 +598,75 @@ func TestHandleMessage_DispatchesText(t *testing.T) {
 	}
 	if received.ChannelKey != "!room:server" {
 		t.Errorf("ChannelKey = %q", received.ChannelKey)
+	}
+}
+
+func TestHandleMessage_SkipsDisallowedRoom(t *testing.T) {
+	p := &Platform{
+		selfUserID:    "@bot:matrix.org",
+		allowedRoomID: "!agent:server",
+		dedup:         core.MessageDedup{},
+		groupReplyAll: true,
+	}
+
+	var count int
+	p.handler = func(_ core.Platform, msg *core.Message) {
+		count++
+	}
+
+	evt := &event.Event{
+		RoomID:    "!other:server",
+		Sender:    "@alice:matrix.org",
+		ID:        "$text_msg",
+		Type:      event.EventMessage,
+		Timestamp: time.Now().UnixMilli(),
+		Content: event.Content{
+			Parsed: &event.MessageEventContent{
+				MsgType: event.MsgText,
+				Body:    "hello bot",
+			},
+		},
+	}
+	p.handleMessage(context.Background(), evt)
+
+	if count != 0 {
+		t.Fatalf("dispatched %d messages from a disallowed room", count)
+	}
+}
+
+func TestHandleMessage_DispatchesAllowedRoom(t *testing.T) {
+	p := &Platform{
+		selfUserID:    "@bot:matrix.org",
+		allowedRoomID: "!agent:server",
+		dedup:         core.MessageDedup{},
+		groupReplyAll: true,
+	}
+
+	var received *core.Message
+	p.handler = func(_ core.Platform, msg *core.Message) {
+		received = msg
+	}
+
+	evt := &event.Event{
+		RoomID:    "!agent:server",
+		Sender:    "@alice:matrix.org",
+		ID:        "$text_msg",
+		Type:      event.EventMessage,
+		Timestamp: time.Now().UnixMilli(),
+		Content: event.Content{
+			Parsed: &event.MessageEventContent{
+				MsgType: event.MsgText,
+				Body:    "hello agent",
+			},
+		},
+	}
+	p.handleMessage(context.Background(), evt)
+
+	if received == nil {
+		t.Fatal("expected message from allowed room")
+	}
+	if received.ChannelKey != "!agent:server" {
+		t.Fatalf("ChannelKey = %q, want !agent:server", received.ChannelKey)
 	}
 }
 

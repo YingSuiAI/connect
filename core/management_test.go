@@ -1049,8 +1049,8 @@ func TestMgmt_AddPlatformToNewProject_DoesNotRequireEngine(t *testing.T) {
 
 	// "brand-new-project" has no engine registered — this must NOT return 404.
 	r := mgmtPost(t, ts.URL+"/api/v1/projects/brand-new-project/add-platform", "tok", map[string]any{
-		"type":    "dingtalk",
-		"options": map[string]any{"client_id": "abc", "client_secret": "def"},
+		"type":    "matrix",
+		"options": map[string]any{"homeserver": "http://127.0.0.1:8008", "room_id": "!agents:example.com"},
 	})
 	if !r.OK {
 		t.Fatalf("add-platform to new project failed: %s — should not require a running engine", r.Error)
@@ -1058,8 +1058,8 @@ func TestMgmt_AddPlatformToNewProject_DoesNotRequireEngine(t *testing.T) {
 	if savedProject != "brand-new-project" {
 		t.Fatalf("saved project = %q, want brand-new-project", savedProject)
 	}
-	if savedPlatType != "dingtalk" {
-		t.Fatalf("saved platform type = %q, want dingtalk", savedPlatType)
+	if savedPlatType != "matrix" {
+		t.Fatalf("saved platform type = %q, want matrix", savedPlatType)
 	}
 }
 
@@ -2810,47 +2810,5 @@ func TestMgmt_CCSwitchProviders_MethodNotAllowed(t *testing.T) {
 	r := mgmtDelete(t, ts.URL+"/api/v1/providers/cc-switch", "tok")
 	if r.OK {
 		t.Fatal("expected DELETE on cc-switch to fail")
-	}
-}
-
-// TestMgmt_SetupWeixinPoll_RejectsMalformedAPIURL is a regression test for a
-// nil-pointer panic in handleSetupWeixinPoll. The handler did
-// `u, _ := url.Parse(apiBase + "/")` and then immediately called
-// `u.JoinPath(...)`. For inputs like "://" or "%zz", url.Parse returns a nil
-// URL plus an error; the discarded error meant the next line crashed the
-// management server with `runtime error: invalid memory address or nil
-// pointer dereference`. handleSetupWeixinBegin already validated this same
-// field; this test pins the symmetric handling here.
-func TestMgmt_SetupWeixinPoll_RejectsMalformedAPIURL(t *testing.T) {
-	mgmt := NewManagementServer(0, "", nil)
-
-	for _, bad := range []string{"://", "://malformed", "%zz"} {
-		body := map[string]any{
-			"qr_key":  "abc",
-			"api_url": bad,
-		}
-		buf := new(bytes.Buffer)
-		if err := json.NewEncoder(buf).Encode(body); err != nil {
-			t.Fatalf("encode body: %v", err)
-		}
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/setup/weixin/poll", buf)
-		req.Header.Set("Content-Type", "application/json")
-		w := httptest.NewRecorder()
-
-		// Recover any panic so the test reports a meaningful failure rather
-		// than crashing the test binary, then assert the handler returned a
-		// 4xx (not 5xx and not a panic) for the bad input.
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					t.Fatalf("handleSetupWeixinPoll panicked on api_url=%q: %v", bad, r)
-				}
-			}()
-			mgmt.handleSetupWeixinPoll(w, req)
-		}()
-
-		if w.Code != http.StatusBadRequest {
-			t.Errorf("api_url=%q: status=%d, want %d (body=%s)", bad, w.Code, http.StatusBadRequest, w.Body.String())
-		}
 	}
 }

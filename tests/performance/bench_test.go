@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chenhg5/cc-connect/core"
-	"github.com/chenhg5/cc-connect/tests/mocks/fake"
+	"github.com/YingSuiAI/connect/core"
+	"github.com/YingSuiAI/connect/tests/mocks/fake"
 )
 
 // ---------------------------------------------------------------------------

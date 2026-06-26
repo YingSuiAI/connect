@@ -14,9 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chenhg5/cc-connect/core"
-	bbplatform "github.com/chenhg5/cc-connect/tests/blackbox/platform"
-
+	"github.com/YingSuiAI/connect/core"
+	bbplatform "github.com/YingSuiAI/connect/tests/blackbox/platform"
 )
 
 const (

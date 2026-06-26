@@ -15,7 +15,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	"github.com/chenhg5/cc-connect/core"
+	"github.com/YingSuiAI/connect/core"
 )
 
 func init() {
@@ -311,7 +311,6 @@ func readCodexCachedModels() []core.ModelOption {
 	return parseCodexModelsJSON(b)
 }
 
-
 // parseCodexModelsJSON parses a Codex models JSON file (model_catalog.json
 // or models_cache.json) into a deduplicated, filtered slice of ModelOption.
 // It is shared by readCodexCachedModels and readCodexModelCatalog.
@@ -356,7 +355,6 @@ func parseCodexModelsJSON(data []byte) []core.ModelOption {
 	}
 	return models
 }
-
 
 // readCodexModelCatalog reads $CODEX_HOME/config.toml to find the
 // model_catalog_json setting, then reads and parses that JSON file.
@@ -551,7 +549,7 @@ func (a *Agent) SkillDirs() []string {
 
 // CompressCommand returns "" because Codex native slash commands (/compact, /clear)
 // are not reliably executed in exec/resume mode — they may be treated as plain text.
-// See: https://github.com/chenhg5/cc-connect/issues/378
+// See: https://github.com/YingSuiAI/connect/issues/378
 func (a *Agent) CompressCommand() string { return "" }
 
 func codexSkillDirs(workDir, explicitCodexHome string) []string {

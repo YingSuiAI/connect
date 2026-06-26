@@ -13,10 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/chenhg5/cc-connect/config"
-	"github.com/chenhg5/cc-connect/core"
-	"github.com/chenhg5/cc-connect/tests/mocks"
-	"github.com/chenhg5/cc-connect/tests/mocks/fake"
+	"github.com/YingSuiAI/connect/config"
+	"github.com/YingSuiAI/connect/core"
+	"github.com/YingSuiAI/connect/tests/mocks"
+	"github.com/YingSuiAI/connect/tests/mocks/fake"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -374,10 +374,10 @@ func TestSmoke_EventTypes(t *testing.T) {
 		{Type: core.EventResult, Content: "final result", Done: true},
 		{Type: core.EventError, Error: context.DeadlineExceeded, Done: true},
 		{
-			Type:       core.EventPermissionRequest,
-			ToolName:   "Bash",
-			ToolInput:  "rm -rf /",
-			RequestID:  "req-001",
+			Type:      core.EventPermissionRequest,
+			ToolName:  "Bash",
+			ToolInput: "rm -rf /",
+			RequestID: "req-001",
 		},
 	}
 
@@ -395,14 +395,14 @@ func TestSmoke_EventTypes(t *testing.T) {
 func TestSmoke_WorkspaceSwitch(t *testing.T) {
 	// Create simple workspace state maps to verify isolation concept
 	ws1 := map[string]string{
-		"id":       "workspace-1",
-		"session":  "session-A",
-		"agent":    "claudecode",
+		"id":      "workspace-1",
+		"session": "session-A",
+		"agent":   "claudecode",
 	}
 	ws2 := map[string]string{
-		"id":       "workspace-2",
-		"session":  "session-B",
-		"agent":    "gemini",
+		"id":      "workspace-2",
+		"session": "session-B",
+		"agent":   "gemini",
 	}
 
 	assert.Equal(t, "workspace-1", ws1["id"])
@@ -559,4 +559,3 @@ func TestSmoke_WebhookCallback(t *testing.T) {
 
 	t.Log("Webhook callback: PASS")
 }
-

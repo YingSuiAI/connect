@@ -3,7 +3,7 @@ package acp
 import (
 	"testing"
 
-	"github.com/chenhg5/cc-connect/core"
+	"github.com/YingSuiAI/connect/core"
 )
 
 func TestNew_DisplayNameDefault(t *testing.T) {

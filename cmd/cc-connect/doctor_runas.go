@@ -15,16 +15,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/chenhg5/cc-connect/config"
-	"github.com/chenhg5/cc-connect/core"
+	"github.com/YingSuiAI/connect/config"
+	"github.com/YingSuiAI/connect/core"
 )
 
-// runDoctor dispatches `cc-connect doctor ...`. Today the only subcommand
+// runDoctor dispatches `direxio-connect doctor ...`. Today the only subcommand
 // is `user-isolation`, but this function is the growth point for future
 // diagnostics.
 func runDoctor(args []string) {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: cc-connect doctor <subcommand>")
+		fmt.Fprintln(os.Stderr, "usage: direxio-connect doctor <subcommand>")
 		fmt.Fprintln(os.Stderr, "subcommands:")
 		fmt.Fprintln(os.Stderr, "  user-isolation   audit run_as_user projects and emit an isolation report")
 		os.Exit(2)
@@ -45,7 +45,7 @@ func runDoctorUserIsolation(args []string) {
 	fs := flag.NewFlagSet("doctor user-isolation", flag.ExitOnError)
 	configPath := fs.String("config", "", "path to config file (default: auto-discover)")
 	projectFilter := fs.String("project", "", "limit audit to a single project name")
-	outPath := fs.String("out", "", "path to write JSON report (default: ~/.cc-connect/audits/<timestamp>-<project>.json per project)")
+	outPath := fs.String("out", "", "path to write JSON report (default: ~/.direxio-connect/audits/<timestamp>-<project>.json per project)")
 	printScript := fs.Bool("print-script", false, "print the embedded probe script and exit")
 	_ = fs.Parse(args)
 
@@ -286,11 +286,11 @@ func writeHumanReport(w *strings.Builder, r core.IsolationReport) {
 	}
 }
 
-// defaultAuditDir returns ~/.cc-connect/audits for the supervisor user.
+// defaultAuditDir returns ~/.direxio-connect/audits for the supervisor user.
 func defaultAuditDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".cc-connect", "audits"), nil
+	return filepath.Join(home, ".direxio-connect", "audits"), nil
 }

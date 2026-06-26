@@ -16,25 +16,25 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/chenhg5/cc-connect/core"
+	"github.com/YingSuiAI/connect/core"
 )
 
 // qoderSession manages a multi-turn Qoder conversation.
 // Each Send() spawns `qodercli -p <prompt> -f stream-json -q`.
 // Subsequent turns use `-r <sessionID>` to resume the conversation.
 type qoderSession struct {
-	cmd       string
-	extraArgs []string // extra args from cmd, prepended before qoder args
-	workDir   string
-	model     string
-	mode      string
-	extraEnv  []string
-	events    chan core.Event
-	sessionID atomic.Value // stores string
-	ctx       context.Context
-	cancel    context.CancelFunc
-	wg        sync.WaitGroup
-	alive     atomic.Bool
+	cmd            string
+	extraArgs      []string // extra args from cmd, prepended before qoder args
+	workDir        string
+	model          string
+	mode           string
+	extraEnv       []string
+	events         chan core.Event
+	sessionID      atomic.Value // stores string
+	ctx            context.Context
+	cancel         context.CancelFunc
+	wg             sync.WaitGroup
+	alive          atomic.Bool
 	startupWarning string
 
 	textMu             sync.Mutex

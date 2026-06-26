@@ -143,4 +143,5 @@ secrets/
 credentials/
 
 .codex
+.codegraph/
 cc-connect-new

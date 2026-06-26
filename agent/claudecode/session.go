@@ -19,7 +19,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/chenhg5/cc-connect/core"
+	"github.com/YingSuiAI/connect/core"
 )
 
 // claudeSession manages a long-running Claude Code process using
@@ -1192,8 +1192,8 @@ func (cs *claudeSession) Close() error {
 	// descendants (e.g. MCP server bridges) a second chance to run cleanup
 	// handlers that respond to signals but not stdin EOF.
 	if err := signalProcessGroup(cs.cmd, syscall.SIGTERM); err != nil {
-			slog.Warn("claudeSession: signal SIGTERM", "error", err)
-		}
+		slog.Warn("claudeSession: signal SIGTERM", "error", err)
+	}
 
 	select {
 	case <-cs.done:

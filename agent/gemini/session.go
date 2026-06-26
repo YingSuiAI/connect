@@ -17,7 +17,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/chenhg5/cc-connect/core"
+	"github.com/YingSuiAI/connect/core"
 )
 
 // geminiSession manages multi-turn conversations with the Gemini CLI.
@@ -55,7 +55,7 @@ func newGeminiSession(ctx context.Context, cmd string, extraArgs []string, workD
 		extraEnv:  extraEnv,
 		events:    make(chan core.Event, 64),
 		ctx:       sessionCtx,
-		cancel:   cancel,
+		cancel:    cancel,
 	}
 	gs.alive.Store(true)
 

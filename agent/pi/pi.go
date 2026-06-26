@@ -13,7 +13,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/chenhg5/cc-connect/core"
+	"github.com/YingSuiAI/connect/core"
 )
 
 func init() {
@@ -372,9 +372,9 @@ func settingsPath() string {
 
 // piSettings represents the structure of pi's settings.json relevant fields.
 type piSettings struct {
-	EnabledModels  []string `json:"enabledModels"`
-	DefaultModel   string   `json:"defaultModel"`
-	DefaultProvider string  `json:"defaultProvider"`
+	EnabledModels   []string `json:"enabledModels"`
+	DefaultModel    string   `json:"defaultModel"`
+	DefaultProvider string   `json:"defaultProvider"`
 }
 
 // readSettings reads and parses pi's settings.json.

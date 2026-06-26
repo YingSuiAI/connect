@@ -17,7 +17,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/chenhg5/cc-connect/core"
+	"github.com/YingSuiAI/connect/core"
 )
 
 // kimSession manages multi-turn conversations with the Kimi CLI.
@@ -51,7 +51,7 @@ func newKimiSession(ctx context.Context, cmd string, extraArgs []string, workDir
 		model:     model,
 		mode:      mode,
 		timeout:   timeout,
-	extraEnv:  extraEnv,
+		extraEnv:  extraEnv,
 		events:    make(chan core.Event, 64),
 		ctx:       sessionCtx,
 		cancel:    cancel,

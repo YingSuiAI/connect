@@ -1,11 +1,11 @@
-APP        := cc-connect
-MODULE     := github.com/chenhg5/cc-connect
+APP        := direxio-connect
+MODULE     := github.com/YingSuiAI/connect
 CMD        := ./cmd/cc-connect
 DIST       := dist
 
 VERSION := v1.3.3
-COMMIT     := $(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
-BUILD_TIME := $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
+COMMIT     := $(shell git rev-parse --short HEAD 2>NUL || echo none)
+BUILD_TIME := $(shell powershell -NoProfile -Command "[DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')" 2>NUL || echo unknown)
 
 LDFLAGS := -s -w \
   -X main.version=$(VERSION) \
@@ -23,19 +23,18 @@ PLATFORMS := \
 # ---------------------------------------------------------------------------
 # Selective compilation via build tags.
 #
-# By default all agents and platforms are included. To build with only
-# specific ones, set AGENTS and/or PLATFORMS_INCLUDE:
+# By default all supported agents and the Direxio Matrix platform are included.
+# To build with only specific agents, set AGENTS:
 #
-#   make build AGENTS=claudecode PLATFORMS_INCLUDE=feishu,telegram
+#   make build AGENTS=claudecode
 #
-# You can also exclude specific ones:
+# You can also exclude specific agents:
 #
-#   make build EXCLUDE=discord,dingtalk,qq,qqbot,line
+#   make build EXCLUDE=cursor,gemini
 # ---------------------------------------------------------------------------
 
 ALL_AGENTS    := acp antigravity claudecode codex copilot cursor devin gemini iflow kimi opencode pi qoder reasonix tmux
-ALL_PLATFORMS := feishu telegram discord slack dingtalk wecom weixin qq qqbot line weibo max matrix webex
-ALL_EXTRAS    := web
+ALL_PLATFORMS := matrix
 
 COMMA := ,
 
@@ -58,24 +57,16 @@ ifdef EXCLUDE
   _EXCLUDE_TAGS += $(addprefix no_,$(subst $(COMMA), ,$(EXCLUDE)))
 endif
 
-ifdef NO_WEB
-  _EXCLUDE_TAGS += no_web
-endif
-
-_BUILD_TAGS := $(strip $(_EXCLUDE_TAGS) goolm)
+_BUILD_TAGS := $(strip $(_EXCLUDE_TAGS) no_web goolm)
 _TAGS_FLAG  := $(if $(_BUILD_TAGS),-tags '$(_BUILD_TAGS)',)
 
-.PHONY: build run clean test test-fast test-full test-smoke test-e2e test-release test-release-local test-performance pre-test lint release release-all web
+.PHONY: build run clean test test-fast test-full test-smoke test-e2e test-release test-release-local test-performance pre-test lint release release-all
 
-web:
-	@if [ ! -d web/node_modules ]; then cd web && npm install; fi
-	cd web && npm run build
-
-build: web
+build:
 	go build $(_TAGS_FLAG) -ldflags "$(LDFLAGS)" -o $(APP) $(CMD)
 
 build-noweb:
-	go build $(_TAGS_FLAG) -tags 'no_web' -ldflags "$(LDFLAGS)" -o $(APP) $(CMD)
+	go build $(_TAGS_FLAG) -ldflags "$(LDFLAGS)" -o $(APP) $(CMD)
 
 run: build
 	./$(APP)
@@ -96,8 +87,8 @@ clean:
 # ---------------------------------------------------------------------------
 
 pre-test:
-	go build ./...
-	go vet ./...
+	go build $(_TAGS_FLAG) ./...
+	go vet $(_TAGS_FLAG) ./...
 
 # Fast test: unit tests + smoke tests
 test-fast: pre-test
@@ -135,7 +126,7 @@ test-release-local:
 	go test ./tests/release_local/...
 	go test ./config
 	go test ./core -run 'TestEngineSendToSessionWithAttachments|TestProcessInteractiveEvents_SuppressesDuplicateSideChannelText|TestCmdList_AllSessionsVisibleAfterRepeatedNew|TestCmdList_SessionVisibleDuringAgentProcessing|TestEngine_Alias|TestEngine_BannedWords|TestEngine_DisabledCommands'
-	go test ./platform/feishu -run 'TestUserIDFromEventFallsBackToUserID|TestResolveUserNameSkipsInvalidLookupID|TestNew_CanDisableInteractiveCards'
+	go test ./platform/matrix
 
 # Legacy: runs unit tests only
 test:
@@ -144,7 +135,7 @@ test:
 lint:
 	golangci-lint run ./...
 
-release-all: web clean
+release-all: clean
 	@mkdir -p $(DIST)
 	@$(foreach platform,$(PLATFORMS), \
 		$(eval GOOS   := $(word 1,$(subst /, ,$(platform)))) \

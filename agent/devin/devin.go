@@ -27,8 +27,8 @@ package devin
 import (
 	"strings"
 
-	"github.com/chenhg5/cc-connect/agent/acp"
-	"github.com/chenhg5/cc-connect/core"
+	"github.com/YingSuiAI/connect/agent/acp"
+	"github.com/YingSuiAI/connect/core"
 )
 
 func init() {

@@ -104,7 +104,7 @@ func TestRestartNotify_DispatchesAfterPlatformReady(t *testing.T) {
 	engine := NewEngine("test", &stubAgent{}, []Platform{plat}, "", LangEnglish)
 
 	// Queue the notify BEFORE marking ready — this mirrors the real
-	// startup order in cmd/cc-connect/main.go where SetPendingRestartNotify
+	// startup order in cmd/direxio-connect/main.go where SetPendingRestartNotify
 	// is called right after e.Start() returns.
 	engine.SetPendingRestartNotify(&RestartRequest{
 		Platform:   "telegram",

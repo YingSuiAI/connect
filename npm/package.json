@@ -1,29 +1,24 @@
 {
-  "name": "cc-connect",
+  "name": "@direxio/connent",
   "version": "1.3.3",
-  "description": "Bridge local AI coding agents (Claude Code, Cursor, Gemini CLI) to messaging platforms (Feishu, DingTalk, Slack, Telegram, Discord, LINE, WeChat Work)",
+  "description": "Direxio Matrix bridge for local AI coding agents",
   "keywords": [
     "claude-code",
     "ai-coding",
-    "feishu",
-    "dingtalk",
-    "slack",
-    "telegram",
-    "discord",
-    "line",
-    "wechat-work",
-    "chatbot",
+    "matrix",
+    "direxio",
+    "agent",
     "bridge"
   ],
-  "homepage": "https://github.com/chenhg5/cc-connect",
+  "homepage": "https://github.com/YingSuiAI/connect",
   "repository": {
     "type": "git",
-    "url": "https://github.com/chenhg5/cc-connect.git"
+    "url": "https://github.com/YingSuiAI/connect.git"
   },
   "license": "MIT",
-  "author": "chenhg5",
+  "author": "Direxio",
   "bin": {
-    "cc-connect": "run.js"
+    "direxio-connect": "run.js"
   },
   "scripts": {
     "postinstall": "node install.js"

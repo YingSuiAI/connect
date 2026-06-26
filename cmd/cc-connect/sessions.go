@@ -11,18 +11,18 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/chenhg5/cc-connect/core"
+	"github.com/YingSuiAI/connect/core"
 )
 
 // sessionFileData mirrors the unexported sessionSnapshot in core/session.go
 // for JSON deserialization of session files.
 type sessionFileData struct {
-	Sessions      map[string]*sessionData    `json:"sessions"`
-	ActiveSession map[string]string          `json:"active_session"`
-	UserSessions  map[string][]string        `json:"user_sessions"`
-	Counter       int64                      `json:"counter"`
-	SessionNames  map[string]string          `json:"session_names,omitempty"`
-	UserMeta      map[string]*userMetaData   `json:"user_meta,omitempty"`
+	Sessions      map[string]*sessionData  `json:"sessions"`
+	ActiveSession map[string]string        `json:"active_session"`
+	UserSessions  map[string][]string      `json:"user_sessions"`
+	Counter       int64                    `json:"counter"`
+	SessionNames  map[string]string        `json:"session_names,omitempty"`
+	UserMeta      map[string]*userMetaData `json:"user_meta,omitempty"`
 }
 
 type userMetaData struct {
@@ -101,7 +101,7 @@ func runSessions(args []string) {
 		}
 		if id == "" {
 			fmt.Fprintln(os.Stderr, "Error: session ID is required")
-			fmt.Fprintln(os.Stderr, "Usage: cc-connect sessions show <session-id> [-n N]")
+			fmt.Fprintln(os.Stderr, "Usage: direxio-connect sessions show <session-id> [-n N]")
 			os.Exit(1)
 		}
 		runSessionsShow(dataDir, id, limit)
@@ -143,9 +143,9 @@ func resolveDataDir(flagValue string) string {
 		return flagValue
 	}
 	if home, err := os.UserHomeDir(); err == nil {
-		return filepath.Join(home, ".cc-connect")
+		return filepath.Join(home, ".direxio-connect")
 	}
-	return ".cc-connect"
+	return ".direxio-connect"
 }
 
 func loadAllSessions(dataDir string) ([]sessionRecord, error) {
@@ -292,7 +292,7 @@ func runSessionsShow(dataDir, id string, limit int) {
 
 	if record == nil {
 		fmt.Fprintf(os.Stderr, "Error: session %q not found\n", id)
-		fmt.Fprintln(os.Stderr, "Use 'cc-connect sessions list' to see available sessions.")
+		fmt.Fprintln(os.Stderr, "Use 'direxio-connect sessions list' to see available sessions.")
 		os.Exit(1)
 	}
 
@@ -419,7 +419,7 @@ func truncate(s string, maxLen int) string {
 }
 
 func printSessionsUsage() {
-	fmt.Println(`Usage: cc-connect sessions [command] [options]
+	fmt.Println(`Usage: direxio-connect sessions [command] [options]
 
 Browse and manage session history.
 
@@ -430,7 +430,7 @@ Commands:
   prune [project] [--merge]  Remove duplicate sessions per chat
 
 Options:
-  --data-dir <path>  Data directory (default: ~/.cc-connect)
+  --data-dir <path>  Data directory (default: ~/.direxio-connect)
   -h, --help         Show this help
 
 Session ID formats for 'show':
@@ -445,12 +445,12 @@ Prune options:
              --merge is also set.
 
 Examples:
-  cc-connect sessions                           Interactive TUI browser
-  cc-connect sessions list                      List all sessions
-  cc-connect sessions show "mybot:s1"           Show all messages in session
-  cc-connect sessions show "#1" -n 20           Show last 20 messages of first session
-  cc-connect sessions prune                     Remove empty duplicate sessions
-  cc-connect sessions prune --empty             Same as above, explicit form
-  cc-connect sessions prune --merge             Merge duplicates, keeping most recent
-  cc-connect sessions prune mybot --merge       Prune specific project`)
+  direxio-connect sessions                           Interactive TUI browser
+  direxio-connect sessions list                      List all sessions
+  direxio-connect sessions show "mybot:s1"           Show all messages in session
+  direxio-connect sessions show "#1" -n 20           Show last 20 messages of first session
+  direxio-connect sessions prune                     Remove empty duplicate sessions
+  direxio-connect sessions prune --empty             Same as above, explicit form
+  direxio-connect sessions prune --merge             Merge duplicates, keeping most recent
+  direxio-connect sessions prune mybot --merge       Prune specific project`)
 }

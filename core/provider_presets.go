@@ -11,18 +11,16 @@ import (
 )
 
 const (
-	defaultPresetsURL         = "https://raw.githubusercontent.com/chenhg5/cc-connect/main/provider-presets.json"
-	fallbackPresetsURL        = "https://gitee.com/chenhg5/cc-connect/raw/main/provider-presets.json"
-	presetsCacheTTL           = 6 * time.Hour
-	presetsHTTPTimeout        = 15 * time.Second
-	presetsFallbackHTTPTimeout = 10 * time.Second
+	defaultPresetsURL  = "https://raw.githubusercontent.com/YingSuiAI/connect/main/provider-presets.json"
+	presetsCacheTTL    = 6 * time.Hour
+	presetsHTTPTimeout = 15 * time.Second
 )
 
 // ProviderPreset describes a recommended provider available from the remote presets list.
 type ProviderPreset struct {
 	Name          string                       `json:"name"`
 	DisplayName   string                       `json:"display_name"`
-	Agents        map[string]PresetAgentConfig  `json:"agents"`               // per-agent-type configuration (keys: "claudecode", "codex", "gemini", "opencode", ...)
+	Agents        map[string]PresetAgentConfig `json:"agents"` // per-agent-type configuration (keys: "claudecode", "codex", "gemini", "opencode", ...)
 	InviteURL     string                       `json:"invite_url,omitempty"`
 	Description   string                       `json:"description,omitempty"`
 	DescriptionZh string                       `json:"description_zh,omitempty"`
@@ -35,9 +33,9 @@ type ProviderPreset struct {
 
 // PresetAgentConfig holds per-agent-type settings within a provider preset.
 type PresetAgentConfig struct {
-	BaseURL     string            `json:"base_url"`
-	Model       string            `json:"model"`
-	Models      []string          `json:"models,omitempty"`
+	BaseURL     string             `json:"base_url"`
+	Model       string             `json:"model"`
+	Models      []string           `json:"models,omitempty"`
 	CodexConfig *PresetCodexConfig `json:"codex_config,omitempty"`
 }
 
@@ -116,12 +114,8 @@ func (c *presetsCache) fetch() (*ProviderPresetsResponse, error) {
 
 	result, err := fetchPresetsFromURL(primaryURL, presetsHTTPTimeout)
 	if err != nil {
-		slog.Warn("primary presets fetch failed, trying fallback", "url", primaryURL, "error", err)
-		result, err = fetchPresetsFromURL(fallbackPresetsURL, presetsFallbackHTTPTimeout)
-	}
-	if err != nil {
 		if c.data != nil {
-			slog.Warn("all presets sources failed, using stale cache", "error", err)
+			slog.Warn("provider presets fetch failed, using stale cache", "url", primaryURL, "error", err)
 			return c.data, nil
 		}
 		return nil, fmt.Errorf("fetch presets: %w", err)

@@ -20,10 +20,9 @@ import (
 )
 
 const (
-	githubReleasesAPI = "https://api.github.com/repos/chenhg5/cc-connect/releases"
-	giteeReleasesAPI  = "https://gitee.com/api/v5/repos/cg33/cc-connect/releases"
-	githubDownload    = "https://github.com/chenhg5/cc-connect/releases/download"
-	giteeDownload     = "https://gitee.com/cg33/cc-connect/releases/download"
+	githubReleasesAPI = "https://api.github.com/repos/YingSuiAI/connect/releases"
+	githubDownload    = "https://github.com/YingSuiAI/connect/releases/download"
+	updateBinaryName  = "direxio-connect"
 )
 
 type ReleaseInfo struct {
@@ -34,8 +33,7 @@ type ReleaseInfo struct {
 	CreatedAt  string `json:"created_at"`
 }
 
-// CheckForUpdate queries GitHub/Gitee for newer releases.
-// If preferGitee is true, tries Gitee first (faster in China); otherwise GitHub first.
+// CheckForUpdate queries GitHub for newer releases.
 func CheckForUpdate(currentVersion string, preferGitee bool) (*ReleaseInfo, error) {
 	releases, err := fetchReleases(preferGitee)
 	if err != nil {
@@ -71,27 +69,10 @@ func CheckForUpdate(currentVersion string, preferGitee bool) (*ReleaseInfo, erro
 }
 
 func fetchReleases(preferGitee bool) ([]ReleaseInfo, error) {
-	type source struct {
-		name string
-		url  string
-	}
-	sources := []source{
-		{"github", githubReleasesAPI + "?per_page=20"},
-		{"gitee", giteeReleasesAPI + "?per_page=20&direction=desc&sort=created"},
-	}
-	if preferGitee {
-		sources[0], sources[1] = sources[1], sources[0]
-	}
-
-	releases, err := fetchReleasesFrom(sources[0].url)
-	if err == nil && len(releases) > 0 {
-		return releases, nil
-	}
-	slog.Debug("updater: primary source failed, trying fallback", "primary", sources[0].name, "error", err)
-
-	releases, err = fetchReleasesFrom(sources[1].url)
+	_ = preferGitee
+	releases, err := fetchReleasesFrom(githubReleasesAPI + "?per_page=20")
 	if err != nil {
-		return nil, fmt.Errorf("check updates failed (both sources): %w", err)
+		return nil, fmt.Errorf("check updates failed: %w", err)
 	}
 	return releases, nil
 }
@@ -102,7 +83,7 @@ func fetchReleasesFrom(apiURL string) ([]ReleaseInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "cc-connect-updater")
+	req.Header.Set("User-Agent", "direxio-connect-updater")
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := client.Do(req)
@@ -123,8 +104,8 @@ func fetchReleasesFrom(apiURL string) ([]ReleaseInfo, error) {
 }
 
 // SelfUpdate downloads and installs the given release version.
-// If preferGitee is true, tries Gitee download first.
 func SelfUpdate(tag string, preferGitee bool) error {
+	_ = preferGitee
 	goos := runtime.GOOS
 	goarch := runtime.GOARCH
 
@@ -132,14 +113,9 @@ func SelfUpdate(tag string, preferGitee bool) error {
 	if goos == "windows" {
 		ext = ".zip"
 	}
-	filename := fmt.Sprintf("cc-connect-%s-%s-%s%s", tag, goos, goarch, ext)
-
-	giteeURL := fmt.Sprintf("%s/%s/%s", giteeDownload, tag, filename)
+	filename := fmt.Sprintf("%s-%s-%s-%s%s", updateBinaryName, tag, goos, goarch, ext)
 	githubURL := fmt.Sprintf("%s/%s/%s", githubDownload, tag, filename)
-	urls := []string{githubURL, giteeURL}
-	if preferGitee {
-		urls = []string{giteeURL, githubURL}
-	}
+	urls := []string{githubURL}
 
 	var data []byte
 	var lastErr error
@@ -183,7 +159,7 @@ func downloadFile(url string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", "cc-connect-updater")
+	req.Header.Set("User-Agent", "direxio-connect-updater")
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -216,11 +192,11 @@ func extractBinaryFromTarGz(data []byte) ([]byte, error) {
 			return nil, err
 		}
 		name := filepath.Base(hdr.Name)
-		if strings.HasPrefix(name, "cc-connect") && hdr.Typeflag == tar.TypeReg {
+		if strings.HasPrefix(name, updateBinaryName) && hdr.Typeflag == tar.TypeReg {
 			return io.ReadAll(tr)
 		}
 	}
-	return nil, fmt.Errorf("cc-connect binary not found in archive")
+	return nil, fmt.Errorf("direxio-connect binary not found in archive")
 }
 
 func extractBinaryFromZip(data []byte) ([]byte, error) {
@@ -230,7 +206,7 @@ func extractBinaryFromZip(data []byte) ([]byte, error) {
 	}
 	for _, f := range r.File {
 		name := filepath.Base(f.Name)
-		if strings.HasPrefix(name, "cc-connect") && !f.FileInfo().IsDir() {
+		if strings.HasPrefix(name, updateBinaryName) && !f.FileInfo().IsDir() {
 			rc, err := f.Open()
 			if err != nil {
 				return nil, err
@@ -239,7 +215,7 @@ func extractBinaryFromZip(data []byte) ([]byte, error) {
 			return io.ReadAll(rc)
 		}
 	}
-	return nil, fmt.Errorf("cc-connect binary not found in zip archive")
+	return nil, fmt.Errorf("direxio-connect binary not found in zip archive")
 }
 
 func replaceBinary(newBinary []byte) error {
@@ -253,7 +229,7 @@ func replaceBinary(newBinary []byte) error {
 	}
 
 	dir := filepath.Dir(execPath)
-	tmpFile, err := os.CreateTemp(dir, "cc-connect-update-*")
+	tmpFile, err := os.CreateTemp(dir, "direxio-connect-update-*")
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)
 	}

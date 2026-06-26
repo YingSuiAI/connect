@@ -14,7 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/chenhg5/cc-connect/core"
+	"github.com/YingSuiAI/connect/core"
 )
 
 // ── Wire types (mirrors reasonix/internal/serve/wire.go) ──────────
@@ -47,7 +47,7 @@ type wireApproval struct {
 }
 
 type wireAsk struct {
-	ID        string           `json:"id"`
+	ID        string            `json:"id"`
 	Questions []wireAskQuestion `json:"questions"`
 }
 
@@ -77,8 +77,8 @@ type reasonixSession struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	events   chan core.Event
-	alive    atomic.Bool
+	events    chan core.Event
+	alive     atomic.Bool
 	closeOnce sync.Once
 
 	// SSE reader state
@@ -88,15 +88,15 @@ type reasonixSession struct {
 	readLoopDone chan struct{}
 
 	// Turn synchronization
-	turnDone      chan struct{} // signaled when turn_done event received
-	errTurn       error        // error from turn_done, read after turnDone
-	inTurn        atomic.Bool  // true while a turn is in progress
+	turnDone chan struct{} // signaled when turn_done event received
+	errTurn  error         // error from turn_done, read after turnDone
+	inTurn   atomic.Bool   // true while a turn is in progress
 
 	// Pending approval tracking
 	pendingApprovalID string
 
 	// Reconnect tracking
-	maxReconnects int
+	maxReconnects  int
 	reconnectCount int
 
 	// Thinking accumulator — buffers incremental reasoning chunks
@@ -107,15 +107,15 @@ func newSession(ctx context.Context, serveURL, workDir, sessionID, mode string) 
 	ctx, cancel := context.WithCancel(ctx)
 
 	s := &reasonixSession{
-		serveURL:     serveURL,
-		workDir:      workDir,
-		sessionID:    sessionID,
-		mode:         mode,
-		ctx:          ctx,
-		cancel:       cancel,
-		events:       make(chan core.Event, 128),
-		turnDone:     make(chan struct{}, 1),
-		readLoopDone: make(chan struct{}),
+		serveURL:      serveURL,
+		workDir:       workDir,
+		sessionID:     sessionID,
+		mode:          mode,
+		ctx:           ctx,
+		cancel:        cancel,
+		events:        make(chan core.Event, 128),
+		turnDone:      make(chan struct{}, 1),
+		readLoopDone:  make(chan struct{}),
 		maxReconnects: 5,
 		sseClient: &http.Client{
 			Timeout: 0, // no timeout for SSE
@@ -259,8 +259,8 @@ func (s *reasonixSession) readLoop(ctx context.Context) {
 
 		slog.Info("reasonix: SSE connected")
 		s.alive.Store(true)
-		backoff = 1 * time.Second  // reset backoff on successful connection
-		s.reconnectCount = 0       // reset reconnect count on successful connection
+		backoff = 1 * time.Second // reset backoff on successful connection
+		s.reconnectCount = 0      // reset reconnect count on successful connection
 		s.readSSE(ctx, resp.Body)
 		_ = resp.Body.Close()
 

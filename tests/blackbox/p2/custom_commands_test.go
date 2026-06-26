@@ -18,7 +18,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/chenhg5/cc-connect/tests/blackbox/helper"
+	"github.com/YingSuiAI/connect/tests/blackbox/helper"
 )
 
 // TestP2_63_65_66_CustomCommandLifecycle tests the full custom prompt command
