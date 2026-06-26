@@ -216,7 +216,6 @@ func (p *Platform) runConnection(ctx context.Context) error {
 	deviceID = resp.DeviceID
 	client.UserID = selfUserID
 	client.DeviceID = deviceID
-	client.SyncPresence = event.PresenceOnline
 
 	if ctx.Err() != nil || p.isStopping() {
 		return nil
@@ -226,7 +225,6 @@ func (p *Platform) runConnection(ctx context.Context) error {
 	if !ok {
 		return nil
 	}
-	p.setPresence(ctx, client, event.PresenceOnline)
 
 	// Initialize E2EE crypto helper
 	p.initE2EE(ctx, client)
@@ -249,7 +247,6 @@ func (p *Platform) runConnection(ctx context.Context) error {
 	err = client.SyncWithContext(ctx)
 
 	// Cleanup
-	p.setPresenceWithTimeout(client, event.PresenceOffline)
 	p.closeCryptoHelper()
 	p.clearClient(gen, client)
 	if ctx.Err() != nil {
@@ -456,33 +453,13 @@ func (p *Platform) Stop() error {
 	p.stopping = true
 	cancel := p.cancel
 	p.cancel = nil
-	client := p.client
 	p.client = nil
 	p.mu.Unlock()
 
-	p.setPresenceWithTimeout(client, event.PresenceOffline)
 	if cancel != nil {
 		cancel()
 	}
 	return nil
-}
-
-func (p *Platform) setPresence(ctx context.Context, client *mautrix.Client, presence event.Presence) {
-	if client == nil || client.UserID == "" {
-		return
-	}
-	if err := client.SetPresence(ctx, mautrix.ReqPresence{Presence: presence}); err != nil {
-		slog.Warn("matrix: set presence failed", "presence", presence, "error", err)
-	}
-}
-
-func (p *Platform) setPresenceWithTimeout(client *mautrix.Client, presence event.Presence) {
-	if client == nil || client.UserID == "" {
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	p.setPresence(ctx, client, presence)
 }
 
 // --- Optional interfaces ---
