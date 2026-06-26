@@ -40,6 +40,16 @@ make build AGENTS=codex PLATFORMS_INCLUDE=matrix
 `direxio-deployer` should generate this file automatically. Manual config is only for local debugging.
 
 ```toml
+[speech]
+enabled = true
+provider = "openai"
+language = "zh"
+
+[speech.openai]
+api_key = "speech-to-text-api-key"
+# base_url = "https://api.openai.com/v1"
+# model = "whisper-1"
+
 [[projects]]
 name = "direxio-agent-room"
 
@@ -81,4 +91,5 @@ direxio-connect daemon install --config /path/to/config.toml --force
 - The Matrix user must be the local `@agent:<server>` identity, not the portal owner.
 - `room_id` must be the real persisted Direxio `agent_room_id`; pseudo ids such as `!agent:<domain>` are rejected by deployer wiring.
 - Only `type = "matrix"` is supported.
+- Voice messages require `[speech]` with a working speech-to-text provider key. After transcription, the text is sent through the same agent-room conversation path as a normal text message.
 - Other chat platforms from upstream cc-connect are intentionally removed.
