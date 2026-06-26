@@ -70,14 +70,25 @@ function fetch(url, redirects = 5) {
 }
 
 async function download(urls) {
+  const maxAttempts = 3;
   for (const url of urls) {
-    try {
-      console.log(`[${LOG_PREFIX}] Downloading from ${url}`);
-      const data = await fetch(url);
-      console.log(`[${LOG_PREFIX}] Downloaded ${(data.length / 1024 / 1024).toFixed(1)} MB`);
-      return data;
-    } catch (err) {
-      console.warn(`[${LOG_PREFIX}] Failed: ${err.message}, trying next source...`);
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const suffix = attempt === 1 ? "" : ` (attempt ${attempt}/${maxAttempts})`;
+        console.log(`[${LOG_PREFIX}] Downloading from ${url}${suffix}`);
+        const data = await fetch(url);
+        console.log(`[${LOG_PREFIX}] Downloaded ${(data.length / 1024 / 1024).toFixed(1)} MB`);
+        return data;
+      } catch (err) {
+        const lastAttempt = attempt === maxAttempts;
+        console.warn(
+          `[${LOG_PREFIX}] Failed: ${err.message}` +
+            (lastAttempt ? ", trying next source..." : ", retrying...")
+        );
+        if (!lastAttempt) {
+          await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+        }
+      }
     }
   }
   throw new Error(

@@ -1,6 +1,6 @@
 {
   "name": "@direxio/connent",
-  "version": "1.3.4",
+  "version": "1.3.5",
   "description": "Direxio Matrix bridge for local AI coding agents",
   "keywords": [
     "claude-code",
@@ -13,7 +13,7 @@
   "homepage": "https://github.com/YingSuiAI/connect",
   "repository": {
     "type": "git",
-    "url": "https://github.com/YingSuiAI/connect.git"
+    "url": "git+https://github.com/YingSuiAI/connect.git"
   },
   "license": "MIT",
   "author": "Direxio",
