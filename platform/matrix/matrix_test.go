@@ -2,6 +2,9 @@ package matrix
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -9,6 +12,7 @@ import (
 
 	"github.com/YingSuiAI/connect/core"
 
+	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 )
@@ -436,6 +440,47 @@ func TestPlatform_StartStopIdempotent(t *testing.T) {
 	err := plat.Start(func(_ core.Platform, _ *core.Message) {})
 	if err == nil || !strings.Contains(err.Error(), "stopped") {
 		t.Errorf("expected stopped error, got %v", err)
+	}
+}
+
+func TestPlatform_StopSetsOfflinePresence(t *testing.T) {
+	presenceRequests := make(chan string, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			t.Errorf("method = %s, want PUT", r.Method)
+		}
+		if r.URL.Path != "/_matrix/client/v3/presence/@agent:example.com/status" {
+			t.Errorf("path = %s", r.URL.Path)
+		}
+		var body struct {
+			Presence string `json:"presence"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode presence body: %v", err)
+		}
+		presenceRequests <- body.Presence
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client, err := mautrix.NewClient(server.URL, "@agent:example.com", "tok")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.Client = server.Client()
+	plat := &Platform{client: client}
+
+	if err := plat.Stop(); err != nil {
+		t.Fatalf("Stop() returned error: %v", err)
+	}
+
+	select {
+	case got := <-presenceRequests:
+		if got != string(event.PresenceOffline) {
+			t.Fatalf("presence = %q, want offline", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected Stop to set Matrix presence offline")
 	}
 }
 
