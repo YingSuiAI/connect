@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -128,6 +130,112 @@ func TestAppServerSession_HandleThreadTokenUsageUpdatedCachesContextUsage(t *tes
 	}
 	if usage.InputTokens != 40849 {
 		t.Fatalf("input tokens = %d, want 40849", usage.InputTokens)
+	}
+}
+
+func TestAppServerSession_UsesConfiguredCommandAndExtraArgs(t *testing.T) {
+	workDir := t.TempDir()
+	pathDir := t.TempDir()
+	logPath := filepath.Join(t.TempDir(), "helper-args.txt")
+	helperBin, err := filepath.Abs(os.Args[0])
+	if err != nil {
+		t.Fatalf("resolve helper binary: %v", err)
+	}
+	if strings.ContainsAny(helperBin, " \t\r\n") {
+		t.Skipf("test helper path contains whitespace unsupported by ParseCmdOpts: %q", helperBin)
+	}
+	t.Setenv("PATH", pathDir)
+	t.Setenv("CC_CONNECT_APP_SERVER_HELPER", "1")
+	t.Setenv("CC_CONNECT_APP_SERVER_HELPER_LOG", logPath)
+
+	agent, err := New(map[string]any{
+		"backend":        "app_server",
+		"app_server_url": "stdio",
+		"cmd": strings.Join([]string{
+			helperBin,
+			"-test.run=TestAppServerSession_AppServerHelper",
+			"--",
+			"configured-extra",
+		}, " "),
+		"work_dir": workDir,
+		"mode":     "yolo",
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	session, err := agent.StartSession(context.Background(), "")
+	if err != nil {
+		t.Fatalf("StartSession() error = %v", err)
+	}
+	defer session.Close()
+
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read helper args: %v", err)
+	}
+	args := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(args) < 5 {
+		t.Fatalf("helper args = %#v, want configured extra args before app-server", args)
+	}
+	if args[0] != "-test.run=TestAppServerSession_AppServerHelper" {
+		t.Fatalf("first helper arg = %q, want test run selector", args[0])
+	}
+	if args[1] != "--" || args[2] != "configured-extra" || args[3] != "app-server" {
+		t.Fatalf("helper args = %#v, want -- configured-extra app-server prefix", args)
+	}
+}
+
+func TestAppServerSession_AppServerHelper(t *testing.T) {
+	if os.Getenv("CC_CONNECT_APP_SERVER_HELPER") != "1" {
+		return
+	}
+	logPath := os.Getenv("CC_CONNECT_APP_SERVER_HELPER_LOG")
+	if logPath == "" {
+		os.Exit(2)
+	}
+	if err := os.WriteFile(logPath, []byte(strings.Join(os.Args[1:], "\n")), 0o600); err != nil {
+		os.Exit(2)
+	}
+
+	decoder := json.NewDecoder(os.Stdin)
+	encoder := json.NewEncoder(os.Stdout)
+	for {
+		var envelope map[string]json.RawMessage
+		if err := decoder.Decode(&envelope); err != nil {
+			if err == io.EOF {
+				return
+			}
+			os.Exit(2)
+		}
+		id, hasID := envelope["id"]
+		if !hasID {
+			continue
+		}
+		var method string
+		if err := json.Unmarshal(envelope["method"], &method); err != nil {
+			os.Exit(2)
+		}
+		result := map[string]any{}
+		switch method {
+		case "initialize":
+			result["protocolVersion"] = "2026-06-26"
+		case "thread/start", "thread/resume":
+			result["cwd"] = ""
+			result["model"] = ""
+			result["thread"] = map[string]any{"id": "thread-configured-command"}
+		case "account/rateLimits/read":
+			result["rateLimits"] = map[string]any{"limitId": "codex"}
+		default:
+			result["ok"] = true
+		}
+		if err := encoder.Encode(map[string]any{
+			"jsonrpc": "2.0",
+			"id":      json.RawMessage(id),
+			"result":  result,
+		}); err != nil {
+			os.Exit(2)
+		}
 	}
 }
 

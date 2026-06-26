@@ -3,7 +3,7 @@ MODULE     := github.com/YingSuiAI/connect
 CMD        := ./cmd/cc-connect
 DIST       := dist
 
-VERSION := v1.3.3
+VERSION := v1.3.4
 COMMIT     := $(shell git rev-parse --short HEAD 2>NUL || echo none)
 BUILD_TIME := $(shell powershell -NoProfile -Command "[DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')" 2>NUL || echo unknown)
 
