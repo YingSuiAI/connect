@@ -2,6 +2,9 @@ package matrix
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"testing"
@@ -9,6 +12,7 @@ import (
 
 	"github.com/YingSuiAI/connect/core"
 
+	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
 	"maunium.net/go/mautrix/id"
 )
@@ -436,6 +440,109 @@ func TestPlatform_StartStopIdempotent(t *testing.T) {
 	err := plat.Start(func(_ core.Platform, _ *core.Message) {})
 	if err == nil || !strings.Contains(err.Error(), "stopped") {
 		t.Errorf("expected stopped error, got %v", err)
+	}
+}
+
+func TestPlatform_StopPublishesAgentRoomOfflineStatus(t *testing.T) {
+	statusEvents := make(chan map[string]any, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			t.Errorf("method = %s, want PUT", r.Method)
+		}
+		wantPath := "/_matrix/client/v3/rooms/!room:matrix.org/state/io.direxio.agent.status/@agent:matrix.org"
+		if r.URL.Path != wantPath {
+			t.Errorf("path = %s, want %s", r.URL.Path, wantPath)
+		}
+
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode request body: %v", err)
+		}
+		statusEvents <- body
+		_, _ = w.Write([]byte(`{"event_id":"$offline"}`))
+	}))
+	defer server.Close()
+
+	client, err := mautrix.NewClient(server.URL, "", "tok")
+	if err != nil {
+		t.Fatalf("create client: %v", err)
+	}
+	client.Client = server.Client()
+
+	p := &Platform{
+		client:        client,
+		selfUserID:    "@agent:matrix.org",
+		allowedRoomID: "!room:matrix.org",
+	}
+	if err := p.Stop(); err != nil {
+		t.Fatalf("Stop() returned error: %v", err)
+	}
+
+	select {
+	case got := <-statusEvents:
+		if got["online"] != false {
+			t.Fatalf("online = %v, want false", got["online"])
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Stop() did not publish offline status")
+	}
+}
+
+func TestPlatform_RunConnectionPublishesAgentRoomOnlineStatus(t *testing.T) {
+	statusEvents := make(chan map[string]any, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/_matrix/client/v3/account/whoami":
+			_, _ = w.Write([]byte(`{"user_id":"@agent:matrix.org","device_id":"DEVICE"}`))
+		case r.Method == http.MethodPut && r.URL.Path == "/_matrix/client/v3/rooms/!room:matrix.org/state/io.direxio.agent.status/@agent:matrix.org":
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("decode request body: %v", err)
+			}
+			statusEvents <- body
+			_, _ = w.Write([]byte(`{"event_id":"$online"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/_matrix/client/v3/sync":
+			<-r.Context().Done()
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	p := &Platform{
+		homeserver:    server.URL,
+		accessToken:   "tok",
+		userID:        "@agent:matrix.org",
+		allowedRoomID: "!room:matrix.org",
+		httpClient:    server.Client(),
+		dedup:         core.MessageDedup{},
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- p.runConnection(ctx)
+	}()
+
+	select {
+	case got := <-statusEvents:
+		if got["online"] != true {
+			t.Fatalf("online = %v, want true", got["online"])
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("runConnection() did not publish online status")
+	}
+
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("runConnection() returned error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("runConnection() did not stop after context cancellation")
 	}
 }
 

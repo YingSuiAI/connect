@@ -58,10 +58,13 @@ type Platform struct {
 }
 
 const (
-	initialBackoff = 2 * time.Second
-	maxBackoff     = 60 * time.Second
-	stableWindow   = 10 * time.Second
+	agentRoomStatusEventType = "io.direxio.agent.status"
+	initialBackoff           = 2 * time.Second
+	maxBackoff               = 60 * time.Second
+	stableWindow             = 10 * time.Second
 )
+
+var agentRoomStatusMatrixEventType = event.Type{Type: agentRoomStatusEventType, Class: event.StateEventType}
 
 func New(opts map[string]any) (core.Platform, error) {
 	homeserver, _ := opts["homeserver"].(string)
@@ -229,6 +232,10 @@ func (p *Platform) runConnection(ctx context.Context) error {
 	// Initialize E2EE crypto helper
 	p.initE2EE(ctx, client)
 
+	if err := p.publishAgentRoomStatus(ctx, true); err != nil {
+		slog.Warn("matrix: publish agent online status failed", "error", core.RedactToken(err.Error(), p.accessToken))
+	}
+
 	slog.Info("matrix: connected", "user_id", selfUserID)
 	p.emitReady(gen)
 
@@ -247,6 +254,13 @@ func (p *Platform) runConnection(ctx context.Context) error {
 	err = client.SyncWithContext(ctx)
 
 	// Cleanup
+	if ctx.Err() == nil {
+		statusCtx, cancelStatus := context.WithTimeout(context.Background(), 5*time.Second)
+		if statusErr := p.publishAgentRoomStatus(statusCtx, false); statusErr != nil {
+			slog.Warn("matrix: publish agent offline status failed", "error", core.RedactToken(statusErr.Error(), p.accessToken))
+		}
+		cancelStatus()
+	}
 	p.closeCryptoHelper()
 	p.clearClient(gen, client)
 	if ctx.Err() != nil {
@@ -445,6 +459,12 @@ func (p *Platform) Send(ctx context.Context, rctx any, content string) error {
 }
 
 func (p *Platform) Stop() error {
+	statusCtx, cancelStatus := context.WithTimeout(context.Background(), 5*time.Second)
+	if err := p.publishAgentRoomStatus(statusCtx, false); err != nil {
+		slog.Warn("matrix: publish agent offline status failed", "error", core.RedactToken(err.Error(), p.accessToken))
+	}
+	cancelStatus()
+
 	p.mu.Lock()
 	if p.stopping {
 		p.mu.Unlock()
@@ -458,6 +478,28 @@ func (p *Platform) Stop() error {
 
 	if cancel != nil {
 		cancel()
+	}
+	return nil
+}
+
+func (p *Platform) publishAgentRoomStatus(ctx context.Context, online bool) error {
+	p.mu.RLock()
+	client := p.client
+	roomID := p.allowedRoomID
+	userID := p.selfUserID
+	if userID == "" {
+		userID = id.UserID(p.userID)
+	}
+	p.mu.RUnlock()
+
+	if client == nil || roomID == "" || userID == "" {
+		return nil
+	}
+
+	content := map[string]bool{"online": online}
+	_, err := client.SendStateEvent(ctx, roomID, agentRoomStatusMatrixEventType, userID.String(), content)
+	if err != nil {
+		return fmt.Errorf("send %s state event: %w", agentRoomStatusEventType, err)
 	}
 	return nil
 }

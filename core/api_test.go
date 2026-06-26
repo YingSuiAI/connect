@@ -43,6 +43,27 @@ func TestHandleSend_AllowsAttachmentOnly(t *testing.T) {
 	}
 }
 
+func TestHandleShutdownTriggersCallback(t *testing.T) {
+	called := make(chan struct{}, 1)
+	api := &APIServer{}
+	api.SetShutdownFunc(func() {
+		called <- struct{}{}
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/shutdown", nil)
+	rec := httptest.NewRecorder()
+	api.handleShutdown(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	select {
+	case <-called:
+	case <-time.After(2 * time.Second):
+		t.Fatal("shutdown callback was not called")
+	}
+}
+
 func TestHandleSend_AllowsTTSTextOnly(t *testing.T) {
 	tts := &recordingTTS{}
 	platform := &audioStubPlatform{stubPlatformEngine: stubPlatformEngine{n: "feishu"}}

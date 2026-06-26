@@ -19,6 +19,7 @@ This repository is the Direxio-maintained fork of cc-connect. It is a local brid
 - The bridge must restrict sync and replies to the configured `room_id`.
 - Replies to users are sent by `@agent:<server>`, not by the portal owner.
 - User text and slash commands are ordinary Matrix text messages in the agent room. Do not add Direxio P2P action facades for normal chat text.
+- Agent online display is Matrix-native room state. The bridge must publish `io.direxio.agent.status` with state key `@agent:<server>` and content `{"online":true}` when connected, then `{"online":false}` when stopped or disconnected.
 
 ## Config Rules
 

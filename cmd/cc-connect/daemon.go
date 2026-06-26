@@ -2,14 +2,19 @@ package main
 
 import (
 	"bufio"
+	"bytes"
+	"context"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/YingSuiAI/connect/config"
 	"github.com/YingSuiAI/connect/daemon"
 )
 
@@ -247,11 +252,57 @@ func daemonStart() {
 func daemonStop() {
 	mgr := mustManager()
 	requireInstalled(mgr)
+	if dataDir, err := daemonDataDirFromMeta(); err == nil {
+		if err := postLocalShutdown(dataDir); err == nil {
+			time.Sleep(2 * time.Second)
+		} else {
+			fmt.Fprintf(os.Stderr, "Warning: graceful daemon shutdown failed, falling back to service stop: %v\n", err)
+		}
+	}
 	if err := mgr.Stop(); err != nil {
 		fmt.Fprintf(os.Stderr, "Stop failed: %v\n", err)
 		os.Exit(1)
 	}
 	fmt.Println("direxio-connect daemon stopped.")
+}
+
+func daemonDataDirFromMeta() (string, error) {
+	meta, err := daemon.LoadMeta()
+	if err != nil {
+		return "", err
+	}
+	cfg, err := config.Load(filepath.Join(meta.WorkDir, "config.toml"))
+	if err != nil {
+		return "", err
+	}
+	return cfg.DataDir, nil
+}
+
+func postLocalShutdown(dataDir string) error {
+	sockPath := resolveSocketPath(dataDir)
+	if _, err := os.Stat(sockPath); err != nil {
+		return fmt.Errorf("shutdown socket unavailable: %w", err)
+	}
+
+	client := &http.Client{
+		Transport: &http.Transport{
+			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+				return net.Dial("unix", sockPath)
+			},
+		},
+		Timeout: 3 * time.Second,
+	}
+
+	resp, err := client.Post("http://unix/shutdown", "application/json", bytes.NewReader(nil))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("shutdown returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
+	}
+	return nil
 }
 
 func daemonRestart(args []string) {

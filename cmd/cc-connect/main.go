@@ -1149,11 +1149,18 @@ func main() {
 	}
 
 	// Start internal API server for CLI send
+	shutdownCh := make(chan struct{}, 1)
 	apiSrv, err := core.NewAPIServer(cfg.DataDir)
 	if err != nil {
 		slog.Warn("api server unavailable", "error", err)
 	} else {
 		globalAPIServer = apiSrv
+		apiSrv.SetShutdownFunc(func() {
+			select {
+			case shutdownCh <- struct{}{}:
+			default:
+			}
+		})
 		apiSrv.SetMaxAttachmentSize(resolveMaxAttachmentSize(cfg))
 
 		relayMgr := core.NewRelayManager(cfg.DataDir)
@@ -1212,6 +1219,7 @@ func main() {
 	var restartReq *core.RestartRequest
 	select {
 	case <-sigCh:
+	case <-shutdownCh:
 	case req := <-core.RestartCh:
 		restartReq = &req
 		slog.Info("restart requested via /restart command", "session", req.SessionKey, "platform", req.Platform)

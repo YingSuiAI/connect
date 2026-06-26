@@ -31,6 +31,7 @@ type APIServer struct {
 	cron       *CronScheduler
 	timer      *TimerScheduler
 	relay      *RelayManager
+	shutdown   func()
 	// maxAttachmentBytes caps the raw size of a single attachment accepted by
 	// /send; the request body limit in handleSend is derived from it (base64
 	// expansion + envelope). Defaults to DefaultMaxAttachmentSize.
@@ -105,6 +106,7 @@ func NewAPIServer(dataDir string) (*APIServer, error) {
 	s.mux.HandleFunc("/relay/send", s.handleRelaySend)
 	s.mux.HandleFunc("/relay/bind", s.handleRelayBind)
 	s.mux.HandleFunc("/relay/binding", s.handleRelayBinding)
+	s.mux.HandleFunc("/shutdown", s.handleShutdown)
 
 	return s, nil
 }
@@ -136,6 +138,12 @@ func (s *APIServer) SetCronScheduler(cs *CronScheduler) {
 
 func (s *APIServer) SetTimerScheduler(ts *TimerScheduler) {
 	s.timer = ts
+}
+
+func (s *APIServer) SetShutdownFunc(fn func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.shutdown = fn
 }
 
 // SetMaxAttachmentSize overrides the per-attachment size limit (bytes) used by
@@ -190,6 +198,24 @@ func (s *APIServer) Stop() {
 	if err := os.Remove(s.socketPath); err != nil && !os.IsNotExist(err) {
 		slog.Debug("api server remove socket failed", "error", err)
 	}
+}
+
+func (s *APIServer) handleShutdown(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	s.mu.RLock()
+	shutdown := s.shutdown
+	s.mu.RUnlock()
+	if shutdown == nil {
+		http.Error(w, "shutdown is not configured", http.StatusServiceUnavailable)
+		return
+	}
+
+	apiJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	go shutdown()
 }
 
 func apiJSON(w http.ResponseWriter, status int, v any) {

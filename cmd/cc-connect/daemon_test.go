@@ -1,9 +1,12 @@
 package main
 
 import (
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestParseDaemonInstallArgs_ConfigSetsWorkDir(t *testing.T) {
@@ -18,6 +21,42 @@ func TestParseDaemonInstallArgs_ConfigSetsWorkDir(t *testing.T) {
 	want := filepath.Clean("/tmp/example")
 	if cfg.WorkDir != want {
 		t.Fatalf("cfg.WorkDir = %q, want %q", cfg.WorkDir, want)
+	}
+}
+
+func TestPostLocalShutdownPostsToConfiguredDataDir(t *testing.T) {
+	dataDir := t.TempDir()
+	sockDir := filepath.Join(dataDir, "run")
+	if err := os.MkdirAll(sockDir, 0o755); err != nil {
+		t.Fatalf("mkdir socket dir: %v", err)
+	}
+
+	called := make(chan struct{}, 1)
+	listener, err := net.Listen("unix", filepath.Join(sockDir, "api.sock"))
+	if err != nil {
+		t.Fatalf("listen unix socket: %v", err)
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/shutdown", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %s, want POST", r.Method)
+		}
+		called <- struct{}{}
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	})
+	server := &http.Server{Handler: mux}
+	go func() {
+		_ = server.Serve(listener)
+	}()
+	defer server.Close()
+
+	if err := postLocalShutdown(dataDir); err != nil {
+		t.Fatalf("postLocalShutdown returned error: %v", err)
+	}
+	select {
+	case <-called:
+	case <-time.After(2 * time.Second):
+		t.Fatal("shutdown request was not received")
 	}
 }
 
