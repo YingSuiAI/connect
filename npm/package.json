@@ -1,6 +1,6 @@
 {
   "name": "@direxio/connent",
-  "version": "1.3.5",
+  "version": "1.3.6",
   "description": "Direxio Matrix bridge for local AI coding agents",
   "keywords": [
     "claude-code",
