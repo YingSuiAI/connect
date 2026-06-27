@@ -66,6 +66,24 @@ func TestWindowsTaskActionRunsHidden(t *testing.T) {
 	}
 }
 
+func TestWindowsCustomServiceNameUsesDistinctTaskAndScript(t *testing.T) {
+	if got := windowsTaskNameForService("t1.direxio.ai"); got != "cc-connect-t1.direxio.ai" {
+		t.Fatalf("windowsTaskNameForService() = %q, want cc-connect-t1.direxio.ai", got)
+	}
+	if got := windowsTaskNameForService(""); got != "cc-connect" {
+		t.Fatalf("default task name = %q, want cc-connect", got)
+	}
+
+	custom := windowsTaskScriptPath("t1.direxio.ai")
+	defaultPath := windowsTaskScriptPath()
+	if custom == defaultPath {
+		t.Fatal("custom service must not share default task script path")
+	}
+	if !strings.HasSuffix(custom, "cc-connect-daemon-t1.direxio.ai.ps1") {
+		t.Fatalf("custom script path = %q", custom)
+	}
+}
+
 func TestWindowsTaskCreateUsesLimitedInteractivePrincipal(t *testing.T) {
 	orig := runPowerShell
 	t.Cleanup(func() { runPowerShell = orig })

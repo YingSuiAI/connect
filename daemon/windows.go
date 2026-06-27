@@ -14,7 +14,6 @@ import (
 )
 
 const (
-	windowsTaskName   = ServiceName
 	windowsScriptName = "cc-connect-daemon.ps1"
 )
 
@@ -28,18 +27,21 @@ func strictPowerShell(script string) string {
 	return "$ErrorActionPreference = 'Stop'\n" + script
 }
 
-type schtasksManager struct{}
+type schtasksManager struct {
+	serviceName string
+}
 
-func newPlatformManager() (Manager, error) {
+func newPlatformManager(serviceName string) (Manager, error) {
 	if _, err := exec.LookPath("powershell.exe"); err != nil {
 		return nil, fmt.Errorf("powershell.exe not found: Windows Task Scheduler management requires PowerShell")
 	}
-	return &schtasksManager{}, nil
+	return &schtasksManager{serviceName: mustNormalizeServiceName(serviceName)}, nil
 }
 
 func (*schtasksManager) Platform() string { return "schtasks" }
 
 func (m *schtasksManager) Install(cfg Config) error {
+	cfg.ServiceName = m.normalizedServiceName()
 	if err := os.MkdirAll(DefaultDataDir(), 0755); err != nil {
 		return fmt.Errorf("create data dir: %w", err)
 	}
@@ -47,7 +49,7 @@ func (m *schtasksManager) Install(cfg Config) error {
 		return fmt.Errorf("create log dir: %w", err)
 	}
 
-	scriptPath := windowsTaskScriptPath()
+	scriptPath := windowsTaskScriptPath(cfg.ServiceName)
 	// 0644 has weak semantics on Windows; the file ACL is what matters.
 	// We still write 0600 so the file's POSIX bits do not advertise read
 	// access, and rely on the user's own profile ACLs for primary defense
@@ -61,11 +63,11 @@ func (m *schtasksManager) Install(cfg Config) error {
 		return fmt.Errorf("chmod task script: %w", err)
 	}
 
-	if err := stopWindowsTask(); err != nil {
+	if err := stopWindowsTask(cfg.ServiceName); err != nil {
 		slog.Warn("schtasks: stop existing task failed", "error", err)
 	}
-	if err := deleteWindowsTask(); err != nil {
-		if windowsTaskMatchesAction(scriptPath) {
+	if err := deleteWindowsTask(cfg.ServiceName); err != nil {
+		if windowsTaskMatchesAction(scriptPath, cfg.ServiceName) {
 			if err := m.Start(); err != nil {
 				return fmt.Errorf("start existing task: %w", err)
 			}
@@ -74,7 +76,7 @@ func (m *schtasksManager) Install(cfg Config) error {
 		return err
 	}
 
-	if err := createWindowsTask(scriptPath); err != nil {
+	if err := createWindowsTask(scriptPath, cfg.ServiceName); err != nil {
 		return err
 	}
 
@@ -84,45 +86,46 @@ func (m *schtasksManager) Install(cfg Config) error {
 	return nil
 }
 
-func (*schtasksManager) Uninstall() error {
-	if err := stopWindowsTask(); err != nil {
+func (m *schtasksManager) Uninstall() error {
+	if err := stopWindowsTask(m.normalizedServiceName()); err != nil {
 		slog.Warn("schtasks: stop task failed", "error", err)
 	}
-	if err := deleteWindowsTask(); err != nil {
+	if err := deleteWindowsTask(m.normalizedServiceName()); err != nil {
 		return err
 	}
-	if err := os.Remove(windowsTaskScriptPath()); err != nil && !os.IsNotExist(err) {
+	if err := os.Remove(windowsTaskScriptPath(m.normalizedServiceName())); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("remove task script: %w", err)
 	}
 	return nil
 }
 
-func (*schtasksManager) Start() error {
-	return startWindowsTask()
+func (m *schtasksManager) Start() error {
+	return startWindowsTask(m.normalizedServiceName())
 }
 
-func (*schtasksManager) Stop() error {
-	if err := stopWindowsTask(); err != nil {
+func (m *schtasksManager) Stop() error {
+	if err := stopWindowsTask(m.normalizedServiceName()); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (*schtasksManager) Restart() error {
-	if err := stopWindowsTask(); err != nil {
+func (m *schtasksManager) Restart() error {
+	if err := stopWindowsTask(m.normalizedServiceName()); err != nil {
 		slog.Warn("schtasks: stop before restart failed", "error", err)
 	}
-	return startWindowsTask()
+	return startWindowsTask(m.normalizedServiceName())
 }
 
-func (*schtasksManager) Status() (*Status, error) {
-	st := &Status{Platform: "schtasks"}
+func (m *schtasksManager) Status() (*Status, error) {
+	serviceName := m.normalizedServiceName()
+	st := &Status{Platform: "schtasks", Service: serviceName}
 
 	out, err := runPowerShell(fmt.Sprintf(`
 $task = Get-ScheduledTask -TaskName %s -ErrorAction SilentlyContinue
 if ($null -eq $task) { exit 1 }
 Write-Output $task.State
-`, powerShellLiteral(windowsTaskName)))
+`, powerShellLiteral(windowsTaskNameForService(serviceName))))
 	if err != nil {
 		return st, nil
 	}
@@ -135,8 +138,32 @@ Write-Output $task.State
 	return st, nil
 }
 
-func windowsTaskScriptPath() string {
-	return filepath.Join(DefaultDataDir(), windowsScriptName)
+func (m *schtasksManager) normalizedServiceName() string {
+	return mustNormalizeServiceName(m.serviceName)
+}
+
+func windowsServiceName(serviceNames ...string) string {
+	if len(serviceNames) == 0 {
+		return ServiceName
+	}
+	return mustNormalizeServiceName(serviceNames[0])
+}
+
+func windowsTaskNameForService(serviceName string) string {
+	normalized := mustNormalizeServiceName(serviceName)
+	if normalized == ServiceName {
+		return ServiceName
+	}
+	return ServiceName + "-" + normalized
+}
+
+func windowsTaskScriptPath(serviceNames ...string) string {
+	serviceName := windowsServiceName(serviceNames...)
+	scriptName := windowsScriptName
+	if serviceName != ServiceName {
+		scriptName = "cc-connect-daemon-" + serviceName + ".ps1"
+	}
+	return filepath.Join(DefaultDataDir(), scriptName)
 }
 
 func windowsTaskAction(scriptPath string) string {
@@ -147,20 +174,22 @@ func windowsTaskActionArgs(scriptPath string) string {
 	return fmt.Sprintf(`-WindowStyle Hidden -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%s"`, scriptPath)
 }
 
-func createWindowsTask(scriptPath string) error {
+func createWindowsTask(scriptPath string, serviceNames ...string) error {
+	serviceName := windowsServiceName(serviceNames...)
 	out, err := runPowerShell(fmt.Sprintf(`
 $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument %s
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
 $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
 Register-ScheduledTask -TaskName %s -Action $action -Trigger $trigger -Principal $principal -Force | Out-Null
-`, powerShellLiteral(windowsTaskActionArgs(scriptPath)), powerShellLiteral(windowsTaskName)))
+`, powerShellLiteral(windowsTaskActionArgs(scriptPath)), powerShellLiteral(windowsTaskNameForService(serviceName))))
 	if err != nil {
 		return fmt.Errorf("register scheduled task: %s (%w)", out, err)
 	}
 	return nil
 }
 
-func windowsTaskMatchesAction(scriptPath string) bool {
+func windowsTaskMatchesAction(scriptPath string, serviceNames ...string) bool {
+	serviceName := windowsServiceName(serviceNames...)
 	out, err := runPowerShell(fmt.Sprintf(`
 $task = Get-ScheduledTask -TaskName %s -ErrorAction SilentlyContinue
 if ($null -eq $task) { exit 1 }
@@ -172,7 +201,7 @@ foreach ($action in $task.Actions) {
 	}
 }
 exit 1
-`, powerShellLiteral(windowsTaskName), powerShellLiteral(windowsTaskActionArgs(scriptPath))))
+`, powerShellLiteral(windowsTaskNameForService(serviceName)), powerShellLiteral(windowsTaskActionArgs(scriptPath))))
 	return err == nil && strings.EqualFold(strings.TrimSpace(out), "true")
 }
 
@@ -224,7 +253,8 @@ func powerShellLiteral(value string) string {
 	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
 }
 
-func stopWindowsTask() error {
+func stopWindowsTask(serviceNames ...string) error {
+	serviceName := windowsServiceName(serviceNames...)
 	out, err := runPowerShell(fmt.Sprintf(`
 $task = Get-ScheduledTask -TaskName %s -ErrorAction SilentlyContinue
 if ($null -eq $task) { exit 0 }
@@ -238,31 +268,33 @@ for ($i = 0; $i -lt 20; $i++) {
 }
 Write-Error 'scheduled task did not stop within timeout'
 exit 1
-`, powerShellLiteral(windowsTaskName), powerShellLiteral(windowsTaskName), powerShellLiteral(windowsTaskName)))
+`, powerShellLiteral(windowsTaskNameForService(serviceName)), powerShellLiteral(windowsTaskNameForService(serviceName)), powerShellLiteral(windowsTaskNameForService(serviceName))))
 	if err != nil {
 		return fmt.Errorf("stop scheduled task: %s (%w)", out, err)
 	}
 	return nil
 }
 
-func startWindowsTask() error {
+func startWindowsTask(serviceNames ...string) error {
+	serviceName := windowsServiceName(serviceNames...)
 	out, err := runPowerShell(fmt.Sprintf(`
 $task = Get-ScheduledTask -TaskName %s -ErrorAction SilentlyContinue
 if ($null -eq $task) { Write-Error 'scheduled task not found'; exit 1 }
 if ($task.State -ne 'Running') { Start-ScheduledTask -TaskName %s }
-`, powerShellLiteral(windowsTaskName), powerShellLiteral(windowsTaskName)))
+`, powerShellLiteral(windowsTaskNameForService(serviceName)), powerShellLiteral(windowsTaskNameForService(serviceName))))
 	if err != nil {
 		return fmt.Errorf("start scheduled task: %s (%w)", out, err)
 	}
 	return nil
 }
 
-func deleteWindowsTask() error {
+func deleteWindowsTask(serviceNames ...string) error {
+	serviceName := windowsServiceName(serviceNames...)
 	out, err := runPowerShell(fmt.Sprintf(`
 $task = Get-ScheduledTask -TaskName %s -ErrorAction SilentlyContinue
 if ($null -eq $task) { exit 0 }
 Unregister-ScheduledTask -TaskName %s -Confirm:$false
-`, powerShellLiteral(windowsTaskName), powerShellLiteral(windowsTaskName)))
+`, powerShellLiteral(windowsTaskNameForService(serviceName)), powerShellLiteral(windowsTaskNameForService(serviceName))))
 	if err != nil {
 		return fmt.Errorf("delete scheduled task: %s (%w)", out, err)
 	}

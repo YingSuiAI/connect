@@ -76,6 +76,13 @@ direxio-connect --config /path/to/config.toml
 direxio-connect daemon install --config /path/to/config.toml --force
 ```
 
+同一台电脑连接多个 Direxio 节点时，每个后台服务使用不同的 service name：
+
+```bash
+direxio-connect daemon install --config /path/to/t1/config.toml --service-name t1.direxio.ai --force
+direxio-connect daemon status --service-name t1.direxio.ai
+```
+
 ## Direxio 约束
 
 - Matrix 用户必须是本地 `@agent:<server>`，不能使用 portal owner session。

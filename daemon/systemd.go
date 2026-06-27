@@ -13,18 +13,16 @@ import (
 	"strings"
 )
 
-const (
-	systemdServiceName = ServiceName + ".service"
-)
-
 type systemdManager struct {
-	system bool // true = system-level (/etc/systemd/system), false = user-level (~/.config/systemd/user)
+	system      bool // true = system-level (/etc/systemd/system), false = user-level (~/.config/systemd/user)
+	serviceName string
 }
 
-func newPlatformManager() (Manager, error) {
+func newPlatformManager(serviceName string) (Manager, error) {
 	if _, err := exec.LookPath("systemctl"); err != nil {
 		return nil, fmt.Errorf("systemctl not found: systemd is required on Linux; if running in a container without systemd, use nohup, tmux, or screen instead")
 	}
+	normalized := mustNormalizeServiceName(serviceName)
 
 	isRoot := os.Getuid() == 0
 
@@ -32,13 +30,13 @@ func newPlatformManager() (Manager, error) {
 		if err := checkSystemdRunning(true); err != nil {
 			return nil, err
 		}
-		return &systemdManager{system: true}, nil
+		return &systemdManager{system: true, serviceName: normalized}, nil
 	}
 
 	if err := checkSystemdRunning(false); err != nil {
 		return nil, err
 	}
-	return &systemdManager{system: false}, nil
+	return &systemdManager{system: false, serviceName: normalized}, nil
 }
 
 func (m *systemdManager) Platform() string {
@@ -49,6 +47,7 @@ func (m *systemdManager) Platform() string {
 }
 
 func (m *systemdManager) Install(cfg Config) error {
+	cfg.ServiceName = m.normalizedServiceName()
 	unitPath := m.unitPath()
 
 	if err := os.MkdirAll(filepath.Dir(unitPath), 0755); err != nil {
@@ -75,8 +74,8 @@ func (m *systemdManager) Install(cfg Config) error {
 
 	for _, cmdArgs := range [][]string{
 		m.sysArgs("daemon-reload"),
-		m.sysArgs("enable", systemdServiceName),
-		m.sysArgs("restart", systemdServiceName),
+		m.sysArgs("enable", m.serviceUnitName()),
+		m.sysArgs("restart", m.serviceUnitName()),
 	} {
 		if out, err := runSystemctl(cmdArgs...); err != nil {
 			return fmt.Errorf("systemctl %s: %s (%w)", strings.Join(cmdArgs, " "), out, err)
@@ -87,7 +86,7 @@ func (m *systemdManager) Install(cfg Config) error {
 }
 
 func (m *systemdManager) Uninstall() error {
-	if _, err := runSystemctl(m.sysArgs("disable", "--now", systemdServiceName)...); err != nil {
+	if _, err := runSystemctl(m.sysArgs("disable", "--now", m.serviceUnitName())...); err != nil {
 		slog.Warn("systemd: disable failed", "error", err)
 	}
 
@@ -103,7 +102,7 @@ func (m *systemdManager) Uninstall() error {
 }
 
 func (m *systemdManager) Start() error {
-	out, err := runSystemctl(m.sysArgs("start", systemdServiceName)...)
+	out, err := runSystemctl(m.sysArgs("start", m.serviceUnitName())...)
 	if err != nil {
 		return fmt.Errorf("start: %s (%w)", out, err)
 	}
@@ -111,7 +110,7 @@ func (m *systemdManager) Start() error {
 }
 
 func (m *systemdManager) Stop() error {
-	out, err := runSystemctl(m.sysArgs("stop", systemdServiceName)...)
+	out, err := runSystemctl(m.sysArgs("stop", m.serviceUnitName())...)
 	if err != nil {
 		return fmt.Errorf("stop: %s (%w)", out, err)
 	}
@@ -119,7 +118,7 @@ func (m *systemdManager) Stop() error {
 }
 
 func (m *systemdManager) Restart() error {
-	out, err := runSystemctl(m.sysArgs("restart", systemdServiceName)...)
+	out, err := runSystemctl(m.sysArgs("restart", m.serviceUnitName())...)
 	if err != nil {
 		return fmt.Errorf("restart: %s (%w)", out, err)
 	}
@@ -127,7 +126,7 @@ func (m *systemdManager) Restart() error {
 }
 
 func (m *systemdManager) Status() (*Status, error) {
-	st := &Status{Platform: m.Platform()}
+	st := &Status{Platform: m.Platform(), Service: m.normalizedServiceName()}
 
 	unitPath := m.unitPath()
 	if _, err := os.Stat(unitPath); err != nil {
@@ -135,7 +134,7 @@ func (m *systemdManager) Status() (*Status, error) {
 	}
 	st.Installed = true
 
-	out, err := runSystemctl(m.sysArgs("show", systemdServiceName,
+	out, err := runSystemctl(m.sysArgs("show", m.serviceUnitName(),
 		"--no-page", "--property", "ActiveState,MainPID")...)
 	if err != nil {
 		return st, nil
@@ -163,10 +162,10 @@ func (m *systemdManager) sysArgs(args ...string) []string {
 
 func (m *systemdManager) unitPath() string {
 	if m.system {
-		return filepath.Join("/etc/systemd/system", systemdServiceName)
+		return filepath.Join("/etc/systemd/system", m.serviceUnitName())
 	}
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "systemd", "user", systemdServiceName)
+	return filepath.Join(home, ".config", "systemd", "user", m.serviceUnitName())
 }
 
 func (m *systemdManager) buildUnit(cfg Config) string {
@@ -214,6 +213,18 @@ func (m *systemdManager) buildUnit(cfg Config) string {
 		sb.WriteString("WantedBy=default.target\n")
 	}
 	return sb.String()
+}
+
+func (m *systemdManager) normalizedServiceName() string {
+	return mustNormalizeServiceName(m.serviceName)
+}
+
+func (m *systemdManager) serviceUnitName() string {
+	serviceName := m.normalizedServiceName()
+	if serviceName == ServiceName {
+		return ServiceName + ".service"
+	}
+	return ServiceName + "-" + serviceName + ".service"
 }
 
 // escapeSystemdEnvValue prepares a value for inclusion inside the double

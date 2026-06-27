@@ -76,9 +76,16 @@ Install daemon:
 direxio-connect daemon install --config /path/to/config.toml --force
 ```
 
+Install a named daemon for one Direxio node:
+
+```bash
+direxio-connect daemon install --config /path/to/t1/config.toml --service-name t1.direxio.ai --force
+```
+
 Check daemon:
 
 ```bash
 direxio-connect daemon status
+direxio-connect daemon status --service-name t1.direxio.ai
 direxio-connect daemon logs -n 100
 ```

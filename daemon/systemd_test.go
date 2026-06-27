@@ -42,6 +42,30 @@ func TestBuildUnit_EscapesEnvValue(t *testing.T) {
 	}
 }
 
+func TestSystemdCustomServiceNameUsesDistinctUnitName(t *testing.T) {
+	mgr := &systemdManager{system: false, serviceName: "t1.direxio.ai"}
+	if got := mgr.serviceUnitName(); got != "cc-connect-t1.direxio.ai.service" {
+		t.Fatalf("serviceUnitName() = %q, want cc-connect-t1.direxio.ai.service", got)
+	}
+
+	defaultMgr := &systemdManager{system: false}
+	if got := defaultMgr.serviceUnitName(); got != "cc-connect.service" {
+		t.Fatalf("default serviceUnitName() = %q, want cc-connect.service", got)
+	}
+}
+
+func TestSystemdCustomServiceNameUsesDistinctUnitPath(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	custom := (&systemdManager{system: false, serviceName: "t1.direxio.ai"}).unitPath()
+	defaultPath := (&systemdManager{system: false}).unitPath()
+	if custom == defaultPath {
+		t.Fatal("custom service must not share default unit path")
+	}
+	if !strings.HasSuffix(custom, "/cc-connect-t1.direxio.ai.service") {
+		t.Fatalf("custom unit path = %q", custom)
+	}
+}
+
 func TestBuildUnit_DropsInvalidEnvName(t *testing.T) {
 	mgr := &systemdManager{system: false}
 	cfg := Config{

@@ -86,6 +86,13 @@ Install as a daemon:
 direxio-connect daemon install --config /path/to/config.toml --force
 ```
 
+For multiple Direxio nodes on one machine, give each daemon a distinct service name:
+
+```bash
+direxio-connect daemon install --config /path/to/t1/config.toml --service-name t1.direxio.ai --force
+direxio-connect daemon status --service-name t1.direxio.ai
+```
+
 ## Direxio Requirements
 
 - The Matrix user must be the local `@agent:<server>` identity, not the portal owner.
