@@ -7,11 +7,13 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 
+	"go.mau.fi/util/dbutil"
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/crypto"
 	"maunium.net/go/mautrix/crypto/cryptohelper"
@@ -21,6 +23,7 @@ import (
 
 	// Register pure-Go olm backend (no CGO/libolm required)
 	_ "maunium.net/go/mautrix/crypto/goolm"
+	_ "modernc.org/sqlite"
 )
 
 // e2eePlatform extends Platform with E2EE-specific fields.
@@ -189,8 +192,13 @@ func (p *Platform) initCrypto(ctx context.Context, client *mautrix.Client) (*cry
 }
 
 func (p *Platform) tryInitCrypto(ctx context.Context, client *mautrix.Client, pickleKey []byte, dbPath string, isRetry bool) (*cryptohelper.CryptoHelper, error) {
-	ch, err := cryptohelper.NewCryptoHelper(client, pickleKey, dbPath)
+	db, err := newCryptoDatabase(dbPath)
 	if err != nil {
+		return nil, fmt.Errorf("open crypto database: %w", err)
+	}
+	ch, err := cryptohelper.NewCryptoHelper(client, pickleKey, db)
+	if err != nil {
+		_ = db.Close()
 		return nil, fmt.Errorf("create crypto helper: %w", err)
 	}
 	ch.DBAccountID = client.UserID.String()
@@ -215,6 +223,18 @@ func (p *Platform) tryInitCrypto(ctx context.Context, client *mautrix.Client, pi
 		return nil, fmt.Errorf("init crypto: %w", err)
 	}
 	return ch, nil
+}
+
+func newCryptoDatabase(dbPath string) (*dbutil.Database, error) {
+	u := url.URL{Scheme: "file", Path: dbPath}
+	q := u.Query()
+	q.Set("_txlock", "immediate")
+	q.Add("_pragma", "foreign_keys(1)")
+	q.Add("_pragma", "journal_mode(WAL)")
+	q.Add("_pragma", "synchronous(NORMAL)")
+	q.Add("_pragma", "busy_timeout(5000)")
+	u.RawQuery = q.Encode()
+	return dbutil.NewWithDialect(u.String(), "sqlite")
 }
 
 func (p *Platform) cleanupFailedCrypto(client *mautrix.Client, ch *cryptohelper.CryptoHelper) {
