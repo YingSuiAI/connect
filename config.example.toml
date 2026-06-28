@@ -29,6 +29,14 @@ name = "direxio-agent-room"
 
 [projects.agent]
 type = "codex"
+# For Hermes ACP, replace this agent block with:
+# [projects.agent]
+# type = "acp"
+# [projects.agent.options]
+# work_dir = "/path/to/project"
+# cmd = "direxio-connect"
+# args = ["hermes-acp-adapter", "--", "hermes", "acp"]
+# display_name = "Hermes ACP"
 
 [projects.agent.options]
 work_dir = "/path/to/project"
