@@ -218,13 +218,18 @@ func (a *hermesACPAdapter) rewriteChildLine(line []byte) ([][]byte, error) {
 				text = extractHermesResultText(env.Result)
 			}
 			text = sanitizeHermesVisibleText(text)
+			responseLine, err := rewriteHermesResponseResult(line, text)
+			if err != nil {
+				return nil, err
+			}
 			if text != "" {
 				flushed, err := buildHermesMessageChunk(sessionID, text)
 				if err != nil {
 					return nil, err
 				}
-				return [][]byte{flushed, line}, nil
+				return [][]byte{flushed, responseLine}, nil
 			}
+			return [][]byte{responseLine}, nil
 		}
 	}
 
@@ -281,20 +286,26 @@ func (a *hermesACPAdapter) takeBufferedText(sessionID string) string {
 
 func extractHermesSessionUpdateText(params json.RawMessage) (sessionID string, kind string, text string) {
 	var wrap struct {
-		SessionID string          `json:"sessionId"`
-		Update    json.RawMessage `json:"update"`
+		SessionID      string          `json:"sessionId"`
+		SessionIDSnake string          `json:"session_id"`
+		Update         json.RawMessage `json:"update"`
 	}
 	if json.Unmarshal(params, &wrap) != nil || len(wrap.Update) == 0 {
 		return "", "", ""
 	}
+	sessionID = wrap.SessionID
+	if sessionID == "" {
+		sessionID = wrap.SessionIDSnake
+	}
 	var head struct {
-		SessionUpdate string `json:"sessionUpdate"`
-		Content       any    `json:"content"`
-		Text          string `json:"text"`
-		Message       string `json:"message"`
+		SessionUpdate      string `json:"sessionUpdate"`
+		SessionUpdateSnake string `json:"session_update"`
+		Content            any    `json:"content"`
+		Text               string `json:"text"`
+		Message            string `json:"message"`
 	}
 	if json.Unmarshal(wrap.Update, &head) != nil {
-		return wrap.SessionID, "", ""
+		return sessionID, "", ""
 	}
 	text = head.Text
 	if text == "" {
@@ -303,7 +314,11 @@ func extractHermesSessionUpdateText(params json.RawMessage) (sessionID string, k
 	if text == "" {
 		text = extractContentText(wrap.Update)
 	}
-	return wrap.SessionID, strings.ToLower(strings.TrimSpace(head.SessionUpdate)), text
+	kind = head.SessionUpdate
+	if kind == "" {
+		kind = head.SessionUpdateSnake
+	}
+	return sessionID, strings.ToLower(strings.TrimSpace(kind)), text
 }
 
 func extractHermesResultText(result json.RawMessage) string {
@@ -311,12 +326,14 @@ func extractHermesResultText(result json.RawMessage) string {
 		return ""
 	}
 	var r struct {
-		FinalResponse string `json:"final_response"`
-		FinalAnswer   string `json:"final_answer"`
-		Response      string `json:"response"`
-		Text          string `json:"text"`
-		Message       string `json:"message"`
-		Content       any    `json:"content"`
+		FinalResponse      string `json:"final_response"`
+		FinalResponseCamel string `json:"finalResponse"`
+		FinalAnswer        string `json:"final_answer"`
+		FinalAnswerCamel   string `json:"finalAnswer"`
+		Response           string `json:"response"`
+		Text               string `json:"text"`
+		Message            string `json:"message"`
+		Content            any    `json:"content"`
 	}
 	if json.Unmarshal(result, &r) != nil {
 		return ""
@@ -324,8 +341,12 @@ func extractHermesResultText(result json.RawMessage) string {
 	switch {
 	case r.FinalResponse != "":
 		return r.FinalResponse
+	case r.FinalResponseCamel != "":
+		return r.FinalResponseCamel
 	case r.FinalAnswer != "":
 		return r.FinalAnswer
+	case r.FinalAnswerCamel != "":
+		return r.FinalAnswerCamel
 	case r.Response != "":
 		return r.Response
 	case r.Text != "":
@@ -374,6 +395,74 @@ func extractContentText(raw json.RawMessage) string {
 	return ""
 }
 
+func rewriteHermesResponseResult(line []byte, text string) ([]byte, error) {
+	if strings.TrimSpace(text) == "" {
+		return line, nil
+	}
+	var obj map[string]any
+	if err := json.Unmarshal(line, &obj); err != nil {
+		return line, nil
+	}
+	result, ok := obj["result"].(map[string]any)
+	if !ok {
+		return line, nil
+	}
+	if !rewriteHermesTextFields(result, text) {
+		return line, nil
+	}
+	out, err := json.Marshal(obj)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func rewriteHermesTextFields(obj map[string]any, text string) bool {
+	changed := false
+	for _, key := range []string{
+		"final_response", "finalResponse", "final_answer", "finalAnswer",
+		"response", "text", "message",
+	} {
+		if value, ok := obj[key].(string); ok && value != "" {
+			obj[key] = text
+			changed = true
+		}
+	}
+
+	switch content := obj["content"].(type) {
+	case string:
+		if content != "" {
+			obj["content"] = text
+			changed = true
+		}
+	case map[string]any:
+		if value, ok := content["text"].(string); ok && value != "" {
+			content["text"] = text
+			changed = true
+		}
+	case []any:
+		wroteFirst := false
+		for _, item := range content {
+			block, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			value, ok := block["text"].(string)
+			if !ok || value == "" {
+				continue
+			}
+			if !wroteFirst {
+				block["text"] = text
+				wroteFirst = true
+			} else {
+				block["text"] = ""
+			}
+			changed = true
+		}
+	}
+	return changed
+}
+
 func buildHermesMessageChunk(sessionID string, text string) ([]byte, error) {
 	msg := map[string]any{
 		"jsonrpc": "2.0",
@@ -405,10 +494,7 @@ func sanitizeHermesVisibleText(text string) string {
 		return after
 	}
 	if looksLikeHermesMetaNarration(text) {
-		if line := lastNonEmptyLine(text); line != "" && line != text && !looksLikeHermesMetaNarration(line) {
-			return line
-		}
-		if tail := shortTailAfterSentenceBoundary(text); tail != "" && !looksLikeHermesMetaNarration(tail) {
+		if tail := visibleTailFromHermesMetaNarration(text); tail != "" {
 			return tail
 		}
 	}
@@ -436,9 +522,18 @@ func looksLikeHermesMetaNarration(text string) bool {
 		"the user ",
 		"user asked ",
 		"user wants ",
+		"they're asking ",
+		"they are asking ",
+		"i should ",
+		"i need ",
+		"i will ",
+		"let me ",
+		"this is coming through ",
+		"this is a direxio ",
 		"用户",
 		"这个用户",
 		"该用户",
+		"这是一个简单请求",
 	}
 	for _, prefix := range prefixes {
 		if strings.HasPrefix(lower, prefix) {
@@ -458,28 +553,82 @@ func lastNonEmptyLine(text string) string {
 	return ""
 }
 
-func shortTailAfterSentenceBoundary(text string) string {
-	trimmed := strings.TrimSpace(text)
-	boundaries := []string{"。", ". ", "！", "! ", "？", "? "}
-	best := -1
-	bestLen := 0
-	for _, boundary := range boundaries {
-		if i := strings.LastIndex(trimmed, boundary); i >= 0 && i+len(boundary) > best {
-			best = i + len(boundary)
-			bestLen = len(boundary)
+func visibleTailFromHermesMetaNarration(text string) string {
+	lines := strings.Split(text, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+		if tail := tailAfterMetaSentenceBoundary(line); tail != "" {
+			return tail
+		}
+		if !looksLikeHermesMetaNarration(line) {
+			return line
 		}
 	}
-	if best < 0 || best > len(trimmed) {
+	return tailAfterMetaSentenceBoundary(text)
+}
+
+func tailAfterMetaSentenceBoundary(text string) string {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
 		return ""
 	}
-	tail := strings.TrimSpace(trimmed[best:])
-	if tail == "" && bestLen > 0 {
-		return ""
+	if tail := tailAfterBoundaries(trimmed, []string{".", "!", "?", ":"}); tail != "" {
+		return tail
 	}
-	if len([]rune(tail)) > 120 {
-		return ""
+	return tailAfterBoundaries(trimmed, []string{"。", "！", "？", "："})
+}
+
+func tailAfterBoundaries(text string, boundaries []string) string {
+	bestStart := -1
+	bestTail := ""
+	for _, boundary := range boundaries {
+		offset := 0
+		for {
+			i := strings.Index(text[offset:], boundary)
+			if i < 0 {
+				break
+			}
+			start := offset + i + len(boundary)
+			tail := strings.TrimSpace(text[start:])
+			if isVisibleAnswerCandidate(tail) && start > bestStart {
+				bestStart = start
+				bestTail = tail
+			}
+			offset = start
+			if offset >= len(text) {
+				break
+			}
+		}
 	}
-	return tail
+	return bestTail
+}
+
+func isVisibleAnswerCandidate(text string) bool {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return false
+	}
+	if looksLikeHermesMetaNarration(text) {
+		return false
+	}
+	if len([]rune(text)) > 180 {
+		return false
+	}
+	lower := strings.ToLower(text)
+	metaFragments := []string{
+		"final user-visible answer",
+		"direxio acp output contract",
+		"without reasoning or hidden thoughts",
+	}
+	for _, fragment := range metaFragments {
+		if strings.Contains(lower, fragment) {
+			return false
+		}
+	}
+	return true
 }
 
 func hermesJSONRPCIDAbsent(id json.RawMessage) bool {

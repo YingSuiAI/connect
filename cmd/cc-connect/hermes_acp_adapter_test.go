@@ -95,6 +95,77 @@ func TestHermesACPAdapterBuffersMessageChunksUntilPromptResponse(t *testing.T) {
 	}
 }
 
+func TestHermesACPAdapterBuffersSnakeCaseMessageChunksUntilPromptResponse(t *testing.T) {
+	adapter := newHermesACPAdapter()
+	_, _, err := adapter.rewriteParentLine([]byte(`{"jsonrpc":"2.0","id":"turn-1","method":"session/prompt","params":{"sessionId":"s1","prompt":[{"type":"text","text":"回个1"}]}}`))
+	if err != nil {
+		t.Fatalf("rewriteParentLine returned error: %v", err)
+	}
+
+	chunk := []byte(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"field_meta":null,"content":{"field_meta":null,"annotations":null,"text":"The user is asking me to reply with just \"1\" - this is a Direxio interaction and the instructions are very clear: return only the final user-visible answer.1","type":"text"},"message_id":null,"session_update":"agent_message_chunk"}}}`)
+	out, err := adapter.rewriteChildLine(chunk)
+	if err != nil {
+		t.Fatalf("rewriteChildLine returned error for snake_case chunk: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("snake_case message chunk should be buffered, got %d outbound lines", len(out))
+	}
+
+	response := []byte(`{"jsonrpc":"2.0","id":"turn-1","result":{"stopReason":"end_turn"}}`)
+	out, err = adapter.rewriteChildLine(response)
+	if err != nil {
+		t.Fatalf("rewriteChildLine returned error for response: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("prompt response should flush cleaned text then response, got %d lines: %#v", len(out), out)
+	}
+
+	var flushed struct {
+		Params struct {
+			Update struct {
+				Content struct {
+					Text string `json:"text"`
+				} `json:"content"`
+			} `json:"update"`
+		} `json:"params"`
+	}
+	if err := json.Unmarshal(out[0], &flushed); err != nil {
+		t.Fatalf("flushed line is not JSON: %v\n%s", err, string(out[0]))
+	}
+	if got := flushed.Params.Update.Content.Text; got != "1" {
+		t.Fatalf("flushed text = %q, want cleaned final answer", got)
+	}
+}
+
+func TestHermesACPAdapterRewritesPromptResponseText(t *testing.T) {
+	adapter := newHermesACPAdapter()
+	_, _, err := adapter.rewriteParentLine([]byte(`{"jsonrpc":"2.0","id":"turn-1","method":"session/prompt","params":{"sessionId":"s1","prompt":[{"type":"text","text":"回个1"}]}}`))
+	if err != nil {
+		t.Fatalf("rewriteParentLine returned error: %v", err)
+	}
+
+	response := []byte(`{"jsonrpc":"2.0","id":"turn-1","result":{"final_response":"The user is asking me to reply with just \"1\" - this is a Direxio interaction and the instructions are very clear: return only the final user-visible answer.1","stopReason":"end_turn"}}`)
+	out, err := adapter.rewriteChildLine(response)
+	if err != nil {
+		t.Fatalf("rewriteChildLine returned error for response: %v", err)
+	}
+	if len(out) != 2 {
+		t.Fatalf("prompt response should flush cleaned text then rewritten response, got %d lines: %#v", len(out), out)
+	}
+
+	var rewritten struct {
+		Result struct {
+			FinalResponse string `json:"final_response"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(out[1], &rewritten); err != nil {
+		t.Fatalf("rewritten response is not JSON: %v\n%s", err, string(out[1]))
+	}
+	if got := rewritten.Result.FinalResponse; got != "1" {
+		t.Fatalf("rewritten final_response = %q, want cleaned final answer", got)
+	}
+}
+
 func TestHermesACPAdapterForwardsToolUpdates(t *testing.T) {
 	adapter := newHermesACPAdapter()
 	line := []byte(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"sessionUpdate":"tool_call","toolCallId":"t1","title":"Read file"}}}`)
@@ -128,6 +199,16 @@ func TestSanitizeHermesVisibleText(t *testing.T) {
 			name: "plain hermes meta narration",
 			in:   `The user asked me to reply with "1". This is simple. 1`,
 			want: "1",
+		},
+		{
+			name: "live exact short reply meta narration",
+			in:   `The user is asking me to reply with just "1" - this is a Direxio interaction and the instructions are very clear: return only the final user-visible answer.1`,
+			want: "1",
+		},
+		{
+			name: "live multiline english reasoning with chinese answer",
+			in:   "The user is asking \"你在思考什么\" which means \"What are you thinking about?\" They're asking me what I'm thinking. This is coming through the Direxio protocol, so I need to follow the Direxio ACP output contract - just give the final user-visible answer without reasoning or hidden thoughts.\n\nI should keep it simple and direct.没什么特别的，就是在处理你的消息。有什么需要帮忙的吗？",
+			want: "没什么特别的，就是在处理你的消息。有什么需要帮忙的吗？",
 		},
 	}
 
