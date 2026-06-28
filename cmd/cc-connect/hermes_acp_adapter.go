@@ -199,6 +199,9 @@ func (a *hermesACPAdapter) rewriteChildLine(line []byte) ([][]byte, error) {
 			a.lastSessionID = sessionID
 			a.mu.Unlock()
 		}
+		if isHermesThoughtUpdateKind(kind) {
+			return nil, nil
+		}
 		if kind == "agent_message_chunk" && text != "" {
 			a.bufferText(sessionID, text)
 			return nil, nil
@@ -541,6 +544,15 @@ func looksLikeHermesMetaNarration(text string) bool {
 		}
 	}
 	return false
+}
+
+func isHermesThoughtUpdateKind(kind string) bool {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "agent_thought_chunk", "agent_thinking_chunk", "reasoning", "reasoning_chunk", "thinking", "thinking_chunk":
+		return true
+	default:
+		return false
+	}
 }
 
 func lastNonEmptyLine(text string) string {

@@ -24,14 +24,19 @@ func mapSessionUpdate(sessionID string, params json.RawMessage) []core.Event {
 	}
 
 	var head struct {
-		SessionUpdate string `json:"sessionUpdate"`
+		SessionUpdate      string `json:"sessionUpdate"`
+		SessionUpdateSnake string `json:"session_update"`
 	}
 	if err := json.Unmarshal(wrap.Update, &head); err != nil {
 		slog.Debug("acp: mapSessionUpdate: failed to parse head", "error", err, "update", string(wrap.Update))
 		return nil
 	}
+	kind := head.SessionUpdate
+	if kind == "" {
+		kind = head.SessionUpdateSnake
+	}
 
-	switch head.SessionUpdate {
+	switch kind {
 	case "agent_message_chunk":
 		return mapAgentMessageChunk(sid, wrap.Update)
 	case "tool_call":
@@ -45,7 +50,7 @@ func mapSessionUpdate(sessionID string, params json.RawMessage) []core.Event {
 		return nil
 	default:
 		// Optional vendor / future ACP shapes — best-effort text extraction.
-		return mapSessionUpdateFallback(sid, head.SessionUpdate, wrap.Update)
+		return mapSessionUpdateFallback(sid, kind, wrap.Update)
 	}
 }
 
@@ -232,7 +237,7 @@ func extractToolCallContentText(blocks []struct {
 func mapSessionUpdateFallback(sessionID string, kind string, update json.RawMessage) []core.Event {
 	// Some agents may send reasoning as a dedicated discriminator; map to EventThinking.
 	switch strings.ToLower(kind) {
-	case "reasoning", "reasoning_chunk", "thinking", "agent_thinking_chunk":
+	case "agent_thought_chunk", "agent_thinking_chunk", "reasoning", "reasoning_chunk", "thinking", "thinking_chunk":
 		var u struct {
 			Content struct {
 				Type string `json:"type"`

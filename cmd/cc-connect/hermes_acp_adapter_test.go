@@ -166,6 +166,19 @@ func TestHermesACPAdapterRewritesPromptResponseText(t *testing.T) {
 	}
 }
 
+func TestHermesACPAdapterDropsThoughtChunks(t *testing.T) {
+	adapter := newHermesACPAdapter()
+	line := []byte(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"field_meta":null,"content":{"field_meta":null,"annotations":null,"text":"The user is asking me to reply with just \"1\". I should answer directly.","type":"text"},"message_id":null,"session_update":"agent_thought_chunk"}}}`)
+
+	out, err := adapter.rewriteChildLine(line)
+	if err != nil {
+		t.Fatalf("rewriteChildLine returned error for thought chunk: %v", err)
+	}
+	if len(out) != 0 {
+		t.Fatalf("thought chunk should be dropped, got %d outbound lines: %#v", len(out), out)
+	}
+}
+
 func TestHermesACPAdapterForwardsToolUpdates(t *testing.T) {
 	adapter := newHermesACPAdapter()
 	line := []byte(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"s1","update":{"sessionUpdate":"tool_call","toolCallId":"t1","title":"Read file"}}}`)

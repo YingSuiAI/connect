@@ -179,6 +179,20 @@ func TestMapSessionUpdate_reasoningChunk(t *testing.T) {
 	}
 }
 
+func TestMapSessionUpdate_snakeCaseThoughtChunk(t *testing.T) {
+	params := json.RawMessage(`{
+		"sessionId": "s1",
+		"update": {
+			"session_update": "agent_thought_chunk",
+			"content": {"type": "text", "text": "internal thought"}
+		}
+	}`)
+	evs := mapSessionUpdate("", params)
+	if len(evs) != 1 || evs[0].Type != core.EventThinking || evs[0].Content != "internal thought" {
+		t.Fatalf("got %+v", evs)
+	}
+}
+
 func TestMapSessionUpdate_toolCall(t *testing.T) {
 	params := json.RawMessage(`{
 		"sessionId": "s1",
