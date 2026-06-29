@@ -23,10 +23,10 @@ brew install direxio-connect
 Download binary from GitHub Releases:
 
 ```bash
-curl -L -o direxio-connect.tar.gz https://github.com/YingSuiAI/connect/releases/latest/download/direxio-connect-v1.3.3-linux-amd64.tar.gz
+curl -L -o direxio-connect.tar.gz https://github.com/YingSuiAI/connect/releases/latest/download/direxio-connect-v1.3.10-linux-amd64.tar.gz
 tar xzf direxio-connect.tar.gz
-chmod +x direxio-connect-v1.3.3-linux-amd64
-sudo mv direxio-connect-v1.3.3-linux-amd64 /usr/local/bin/direxio-connect
+chmod +x direxio-connect-v1.3.10-linux-amd64
+sudo mv direxio-connect-v1.3.10-linux-amd64 /usr/local/bin/direxio-connect
 ```
 
 Build from source:
@@ -70,15 +70,37 @@ Start foreground:
 direxio-connect --config /path/to/config.toml
 ```
 
+## Hermes ACP Adapter
+
+Hermes ACP should be launched through the Direxio compatibility adapter so reasoning text is buffered and cleaned before it reaches the Matrix room:
+
+```toml
+[projects.agent]
+type = "acp"
+
+[projects.agent.options]
+work_dir = "/path/to/project"
+cmd = "direxio-connect"
+args = ["hermes-acp-adapter", "--", "hermes", "acp"]
+display_name = "Hermes ACP"
+```
+
 Install daemon:
 
 ```bash
 direxio-connect daemon install --config /path/to/config.toml --force
 ```
 
+Install a named daemon for one Direxio node:
+
+```bash
+direxio-connect daemon install --config /path/to/t1/config.toml --service-name t1.direxio.ai --force
+```
+
 Check daemon:
 
 ```bash
 direxio-connect daemon status
+direxio-connect daemon status --service-name t1.direxio.ai
 direxio-connect daemon logs -n 100
 ```

@@ -21,13 +21,14 @@ const (
 )
 
 type Config struct {
-	BinaryPath        string
-	WorkDir           string
-	LogFile           string
-	LogMaxSize        int64
-	LogMaxBackups     int
-	EnvPATH           string            // capture user's PATH so agents are accessible
-	EnvExtra          map[string]string // selected environment variables needed by the service runtime
+	ServiceName   string
+	BinaryPath    string
+	WorkDir       string
+	LogFile       string
+	LogMaxSize    int64
+	LogMaxBackups int
+	EnvPATH       string            // capture user's PATH so agents are accessible
+	EnvExtra      map[string]string // selected environment variables needed by the service runtime
 	// NoCaptureSecrets, when true, restricts the install-time env capture
 	// to proxy-related variables only and skips both the config.toml ${ENV}
 	// placeholder scan and any extension discoverers registered via
@@ -42,6 +43,7 @@ type Status struct {
 	Running   bool
 	PID       int
 	Platform  string // "systemd", "launchd", "schtasks"
+	Service   string
 }
 
 type Manager interface {
@@ -54,14 +56,32 @@ type Manager interface {
 	Platform() string
 }
 
-// NewManager returns a platform-specific daemon manager.
+// NewManager returns a platform-specific daemon manager for the default service.
 func NewManager() (Manager, error) {
-	return newPlatformManager()
+	return NewManagerForService(ServiceName)
+}
+
+// NewManagerForService returns a platform-specific daemon manager for a named
+// service. Multiple named services can coexist on the same machine.
+func NewManagerForService(serviceName string) (Manager, error) {
+	normalized, err := NormalizeServiceName(serviceName)
+	if err != nil {
+		return nil, err
+	}
+	return newPlatformManager(normalized)
 }
 
 func DefaultLogFile() string {
+	return DefaultLogFileForService(ServiceName)
+}
+
+func DefaultLogFileForService(serviceName string) string {
+	normalized := mustNormalizeServiceName(serviceName)
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".cc-connect", "logs", "cc-connect.log")
+	if normalized == ServiceName {
+		return filepath.Join(home, ".cc-connect", "logs", "cc-connect.log")
+	}
+	return filepath.Join(home, ".cc-connect", "logs", normalized+".log")
 }
 
 func DefaultDataDir() string {
@@ -74,31 +94,48 @@ func DefaultDataDir() string {
 // etc. can locate the log file without parsing service definitions.
 
 type Meta struct {
-	LogFile      string `json:"log_file"`
-	LogMaxSize   int64  `json:"log_max_size"`
-	LogMaxBackups int   `json:"log_max_backups"`
-	WorkDir      string `json:"work_dir"`
-	BinaryPath   string `json:"binary_path"`
-	InstalledAt  string `json:"installed_at"`
+	ServiceName   string `json:"service_name,omitempty"`
+	LogFile       string `json:"log_file"`
+	LogMaxSize    int64  `json:"log_max_size"`
+	LogMaxBackups int    `json:"log_max_backups"`
+	WorkDir       string `json:"work_dir"`
+	BinaryPath    string `json:"binary_path"`
+	InstalledAt   string `json:"installed_at"`
 }
 
 func metaPath() string {
-	return filepath.Join(DefaultDataDir(), "daemon.json")
+	return metaPathForService(ServiceName)
 }
 
-func SaveMeta(m *Meta) error {
-	if err := os.MkdirAll(filepath.Dir(metaPath()), 0755); err != nil {
+func metaPathForService(serviceName string) string {
+	normalized := mustNormalizeServiceName(serviceName)
+	if normalized == ServiceName {
+		return filepath.Join(DefaultDataDir(), "daemon.json")
+	}
+	return filepath.Join(DefaultDataDir(), "daemons", normalized+".json")
+}
+
+func SaveMetaForService(serviceName string, m *Meta) error {
+	normalized, err := NormalizeServiceName(serviceName)
+	if err != nil {
+		return err
+	}
+	if m.ServiceName == "" {
+		m.ServiceName = normalized
+	}
+	path := metaPathForService(normalized)
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(metaPath(), data, 0644)
+	return os.WriteFile(path, data, 0644)
 }
 
-func LoadMeta() (*Meta, error) {
-	data, err := os.ReadFile(metaPath())
+func LoadMetaForService(serviceName string) (*Meta, error) {
+	data, err := os.ReadFile(metaPathForService(serviceName))
 	if err != nil {
 		return nil, err
 	}
@@ -106,11 +143,45 @@ func LoadMeta() (*Meta, error) {
 	if err := json.Unmarshal(data, &m); err != nil {
 		return nil, err
 	}
+	if m.ServiceName == "" {
+		m.ServiceName = mustNormalizeServiceName(serviceName)
+	}
 	return &m, nil
 }
 
+func RemoveMetaForService(serviceName string) {
+	os.Remove(metaPathForService(serviceName))
+}
+
+func NormalizeServiceName(name string) (string, error) {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		return ServiceName, nil
+	}
+	if !serviceNamePattern.MatchString(trimmed) {
+		return "", fmt.Errorf("invalid service name %q: use 1-80 characters: letters, numbers, dot, underscore, or hyphen; it must start with a letter or number", name)
+	}
+	return trimmed, nil
+}
+
+func mustNormalizeServiceName(name string) string {
+	normalized, err := NormalizeServiceName(name)
+	if err != nil {
+		return ServiceName
+	}
+	return normalized
+}
+
+func SaveMeta(m *Meta) error {
+	return SaveMetaForService(ServiceName, m)
+}
+
+func LoadMeta() (*Meta, error) {
+	return LoadMetaForService(ServiceName)
+}
+
 func RemoveMeta() {
-	os.Remove(metaPath())
+	RemoveMetaForService(ServiceName)
 }
 
 func NowISO() string {
@@ -118,6 +189,11 @@ func NowISO() string {
 }
 
 func Resolve(cfg *Config) error {
+	serviceName, err := NormalizeServiceName(cfg.ServiceName)
+	if err != nil {
+		return err
+	}
+	cfg.ServiceName = serviceName
 	if cfg.BinaryPath == "" {
 		exe, err := os.Executable()
 		if err != nil {
@@ -137,7 +213,7 @@ func Resolve(cfg *Config) error {
 		cfg.WorkDir = wd
 	}
 	if cfg.LogFile == "" {
-		cfg.LogFile = DefaultLogFile()
+		cfg.LogFile = DefaultLogFileForService(cfg.ServiceName)
 	}
 	if cfg.LogMaxSize <= 0 {
 		cfg.LogMaxSize = DefaultLogMaxSize
@@ -204,6 +280,7 @@ func captureDaemonEnv(noCaptureSecrets bool) map[string]string {
 }
 
 var configEnvPlaceholderPattern = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
+var serviceNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$`)
 
 // captureConfigEnvPlaceholders scans configPath for ${ENV_NAME} placeholders
 // and, for each one set in the current process environment, copies it into
@@ -269,4 +346,3 @@ func captureConfigEnvPlaceholdersInString(s string, env map[string]string) {
 		}
 	}
 }
-

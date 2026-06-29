@@ -25,7 +25,11 @@ func TestParseDaemonInstallArgs_ConfigSetsWorkDir(t *testing.T) {
 }
 
 func TestPostLocalShutdownPostsToConfiguredDataDir(t *testing.T) {
-	dataDir := t.TempDir()
+	dataDir, err := os.MkdirTemp("/tmp", "cc-connect-test-*")
+	if err != nil {
+		t.Fatalf("create short temp dir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dataDir) })
 	sockDir := filepath.Join(dataDir, "run")
 	if err := os.MkdirAll(sockDir, 0o755); err != nil {
 		t.Fatalf("mkdir socket dir: %v", err)
@@ -155,5 +159,43 @@ func TestParseDaemonInstallArgs_WorkDirOverridesConfig(t *testing.T) {
 	want := filepath.Clean("/tmp/override")
 	if cfg.WorkDir != want {
 		t.Fatalf("cfg.WorkDir = %q, want %q", cfg.WorkDir, want)
+	}
+}
+
+func TestParseDaemonInstallArgs_ServiceName(t *testing.T) {
+	cfg, _, err := parseDaemonInstallArgs([]string{"--service-name", "t1.direxio.ai"})
+	if err != nil {
+		t.Fatalf("parseDaemonInstallArgs returned error: %v", err)
+	}
+	if cfg.ServiceName != "t1.direxio.ai" {
+		t.Fatalf("cfg.ServiceName = %q, want t1.direxio.ai", cfg.ServiceName)
+	}
+}
+
+func TestParseDaemonServiceNameStripsGlobalFlag(t *testing.T) {
+	t.Setenv("DIREXIO_CONNECT_SERVICE_NAME", "")
+	serviceName, rest, err := parseDaemonServiceName([]string{"--service-name", "t1.direxio.ai", "--force"})
+	if err != nil {
+		t.Fatalf("parseDaemonServiceName returned error: %v", err)
+	}
+	if serviceName != "t1.direxio.ai" {
+		t.Fatalf("serviceName = %q, want t1.direxio.ai", serviceName)
+	}
+	if len(rest) != 1 || rest[0] != "--force" {
+		t.Fatalf("rest = %#v, want [--force]", rest)
+	}
+}
+
+func TestParseDaemonServiceNameUsesEnvDefault(t *testing.T) {
+	t.Setenv("DIREXIO_CONNECT_SERVICE_NAME", "t2.direxio.ai")
+	serviceName, rest, err := parseDaemonServiceName([]string{"--force"})
+	if err != nil {
+		t.Fatalf("parseDaemonServiceName returned error: %v", err)
+	}
+	if serviceName != "t2.direxio.ai" {
+		t.Fatalf("serviceName = %q, want t2.direxio.ai", serviceName)
+	}
+	if len(rest) != 1 || rest[0] != "--force" {
+		t.Fatalf("rest = %#v, want [--force]", rest)
 	}
 }

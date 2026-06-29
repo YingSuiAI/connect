@@ -24,23 +24,30 @@ func runDaemon(args []string) {
 		os.Exit(1)
 	}
 
-	switch args[0] {
+	command := args[0]
+	serviceName, commandArgs, err := parseDaemonServiceName(args[1:])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
+	switch command {
 	case "install":
-		daemonInstall(args[1:])
+		daemonInstall(serviceName, commandArgs)
 	case "uninstall":
-		daemonUninstall()
+		daemonUninstall(serviceName)
 	case "start":
-		daemonStart()
+		daemonStart(serviceName)
 	case "stop":
-		daemonStop()
+		daemonStop(serviceName)
 	case "restart":
-		daemonRestart(args[1:])
+		daemonRestart(serviceName, commandArgs)
 	case "status":
-		daemonStatus()
+		daemonStatus(serviceName)
 	case "logs":
-		daemonLogs(args[1:])
+		daemonLogs(serviceName, commandArgs)
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown daemon command: %s\n\n", args[0])
+		fmt.Fprintf(os.Stderr, "Unknown daemon command: %s\n\n", command)
 		printDaemonUsage()
 		os.Exit(1)
 	}
@@ -48,11 +55,14 @@ func runDaemon(args []string) {
 
 // ── install ─────────────────────────────────────────────────
 
-func daemonInstall(args []string) {
+func daemonInstall(serviceName string, args []string) {
 	cfg, force, err := parseDaemonInstallArgs(args)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
+	}
+	if strings.TrimSpace(cfg.ServiceName) == "" {
+		cfg.ServiceName = serviceName
 	}
 
 	if err := daemon.Resolve(&cfg); err != nil {
@@ -67,7 +77,7 @@ func daemonInstall(args []string) {
 		os.Exit(1)
 	}
 
-	mgr, err := daemon.NewManager()
+	mgr, err := daemon.NewManagerForService(cfg.ServiceName)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -84,18 +94,21 @@ func daemonInstall(args []string) {
 		os.Exit(1)
 	}
 
-	if err := daemon.SaveMeta(&daemon.Meta{
-		LogFile:     cfg.LogFile,
-		LogMaxSize:  cfg.LogMaxSize,
-		WorkDir:     cfg.WorkDir,
-		BinaryPath:  cfg.BinaryPath,
-		InstalledAt: daemon.NowISO(),
+	if err := daemon.SaveMetaForService(cfg.ServiceName, &daemon.Meta{
+		ServiceName:   cfg.ServiceName,
+		LogFile:       cfg.LogFile,
+		LogMaxSize:    cfg.LogMaxSize,
+		LogMaxBackups: cfg.LogMaxBackups,
+		WorkDir:       cfg.WorkDir,
+		BinaryPath:    cfg.BinaryPath,
+		InstalledAt:   daemon.NowISO(),
 	}); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: failed to save metadata: %v\n", err)
 	}
 
 	fmt.Println("direxio-connect daemon installed and started.")
 	fmt.Println()
+	fmt.Printf("  Service:   %s\n", cfg.ServiceName)
 	fmt.Printf("  Platform:  %s\n", mgr.Platform())
 	fmt.Printf("  Binary:    %s\n", cfg.BinaryPath)
 	fmt.Printf("  WorkDir:   %s\n", cfg.WorkDir)
@@ -103,11 +116,12 @@ func daemonInstall(args []string) {
 	fmt.Printf("  LogMax:    %d MB\n", cfg.LogMaxSize/1024/1024)
 	fmt.Println()
 	fmt.Println("Commands:")
-	fmt.Println("  direxio-connect daemon status    - Check status")
-	fmt.Println("  direxio-connect daemon logs -f   - Follow logs")
-	fmt.Println("  direxio-connect daemon restart   - Restart")
-	fmt.Println("  direxio-connect daemon stop      - Stop")
-	fmt.Println("  direxio-connect daemon uninstall - Remove")
+	serviceFlag := daemonServiceFlag(cfg.ServiceName)
+	fmt.Printf("  direxio-connect daemon status%s    - Check status\n", serviceFlag)
+	fmt.Printf("  direxio-connect daemon logs%s -f   - Follow logs\n", serviceFlag)
+	fmt.Printf("  direxio-connect daemon restart%s   - Restart\n", serviceFlag)
+	fmt.Printf("  direxio-connect daemon stop%s      - Stop\n", serviceFlag)
+	fmt.Printf("  direxio-connect daemon uninstall%s - Remove\n", serviceFlag)
 
 	// Check linger for user-mode systemd
 	if strings.Contains(mgr.Platform(), "user") {
@@ -138,6 +152,17 @@ func parseDaemonInstallArgs(args []string) (daemon.Config, bool, error) {
 		switch {
 		case arg == "--force":
 			force = true
+		case arg == "--service-name" || arg == "--name":
+			value, next, err := daemonInstallFlagValue(args, i, arg)
+			if err != nil {
+				return daemon.Config{}, false, err
+			}
+			cfg.ServiceName = value
+			i = next
+		case strings.HasPrefix(arg, "--service-name="):
+			cfg.ServiceName = strings.TrimPrefix(arg, "--service-name=")
+		case strings.HasPrefix(arg, "--name="):
+			cfg.ServiceName = strings.TrimPrefix(arg, "--name=")
 		case arg == "--no-capture-secrets":
 			cfg.NoCaptureSecrets = true
 		case arg == "--log-file":
@@ -195,6 +220,42 @@ func parseDaemonInstallArgs(args []string) (daemon.Config, bool, error) {
 	return cfg, force, nil
 }
 
+func parseDaemonServiceName(args []string) (string, []string, error) {
+	serviceName := os.Getenv("DIREXIO_CONNECT_SERVICE_NAME")
+	rest := make([]string, 0, len(args))
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--service-name" || arg == "--name":
+			value, next, err := daemonInstallFlagValue(args, i, arg)
+			if err != nil {
+				return "", nil, err
+			}
+			serviceName = value
+			i = next
+		case strings.HasPrefix(arg, "--service-name="):
+			serviceName = strings.TrimPrefix(arg, "--service-name=")
+		case strings.HasPrefix(arg, "--name="):
+			serviceName = strings.TrimPrefix(arg, "--name=")
+		default:
+			rest = append(rest, arg)
+		}
+	}
+	normalized, err := daemon.NormalizeServiceName(serviceName)
+	if err != nil {
+		return "", nil, err
+	}
+	return normalized, rest, nil
+}
+
+func daemonServiceFlag(serviceName string) string {
+	normalized, err := daemon.NormalizeServiceName(serviceName)
+	if err != nil || normalized == daemon.ServiceName {
+		return ""
+	}
+	return " --service-name " + normalized
+}
+
 func daemonInstallFlagValue(args []string, index int, flagName string) (string, int, error) {
 	next := index + 1
 	if next >= len(args) {
@@ -215,8 +276,8 @@ func isTruthyEnv(v string) bool {
 
 // ── uninstall ───────────────────────────────────────────────
 
-func daemonUninstall() {
-	mgr, err := daemon.NewManager()
+func daemonUninstall(serviceName string) {
+	mgr, err := daemon.NewManagerForService(serviceName)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -233,14 +294,14 @@ func daemonUninstall() {
 		os.Exit(1)
 	}
 
-	daemon.RemoveMeta()
+	daemon.RemoveMetaForService(serviceName)
 	fmt.Println("direxio-connect daemon uninstalled.")
 }
 
 // ── start / stop / restart ──────────────────────────────────
 
-func daemonStart() {
-	mgr := mustManager()
+func daemonStart(serviceName string) {
+	mgr := mustManager(serviceName)
 	requireInstalled(mgr)
 	if err := mgr.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "Start failed: %v\n", err)
@@ -249,10 +310,10 @@ func daemonStart() {
 	fmt.Println("direxio-connect daemon started.")
 }
 
-func daemonStop() {
-	mgr := mustManager()
+func daemonStop(serviceName string) {
+	mgr := mustManager(serviceName)
 	requireInstalled(mgr)
-	if dataDir, err := daemonDataDirFromMeta(); err == nil {
+	if dataDir, err := daemonDataDirFromMeta(serviceName); err == nil {
 		if err := postLocalShutdown(dataDir); err == nil {
 			time.Sleep(2 * time.Second)
 		} else {
@@ -266,8 +327,8 @@ func daemonStop() {
 	fmt.Println("direxio-connect daemon stopped.")
 }
 
-func daemonDataDirFromMeta() (string, error) {
-	meta, err := daemon.LoadMeta()
+func daemonDataDirFromMeta(serviceName string) (string, error) {
+	meta, err := daemon.LoadMetaForService(serviceName)
 	if err != nil {
 		return "", err
 	}
@@ -305,7 +366,7 @@ func postLocalShutdown(dataDir string) error {
 	return nil
 }
 
-func daemonRestart(args []string) {
+func daemonRestart(serviceName string, args []string) {
 	force := false
 	for _, a := range args {
 		if a == "--force" {
@@ -313,11 +374,11 @@ func daemonRestart(args []string) {
 		}
 	}
 
-	mgr := mustManager()
+	mgr := mustManager(serviceName)
 	requireInstalled(mgr)
 
 	if force {
-		if meta, err := daemon.LoadMeta(); err == nil {
+		if meta, err := daemon.LoadMetaForService(serviceName); err == nil {
 			configPath := meta.WorkDir + "/config.toml"
 			KillExistingInstance(configPath)
 		}
@@ -333,16 +394,20 @@ func daemonRestart(args []string) {
 func requireInstalled(mgr daemon.Manager) {
 	st, _ := mgr.Status()
 	if st == nil || !st.Installed {
+		serviceName := daemon.ServiceName
+		if st != nil && st.Service != "" {
+			serviceName = st.Service
+		}
 		fmt.Fprintln(os.Stderr, "Service is not installed. Run first:")
-		fmt.Fprintln(os.Stderr, "  direxio-connect daemon install --work-dir /path/to/config-dir")
+		fmt.Fprintf(os.Stderr, "  direxio-connect daemon install%s --work-dir /path/to/config-dir\n", daemonServiceFlag(serviceName))
 		os.Exit(1)
 	}
 }
 
 // ── status ──────────────────────────────────────────────────
 
-func daemonStatus() {
-	mgr := mustManager()
+func daemonStatus(serviceName string) {
+	mgr := mustManager(serviceName)
 	st, err := mgr.Status()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -354,9 +419,10 @@ func daemonStatus() {
 
 	if !st.Installed {
 		fmt.Println("  Status:    Not installed")
+		fmt.Printf("  Service:   %s\n", serviceName)
 		fmt.Printf("  Platform:  %s\n", st.Platform)
 		fmt.Println()
-		fmt.Println("  Run: direxio-connect daemon install")
+		fmt.Printf("  Run: direxio-connect daemon install%s\n", daemonServiceFlag(serviceName))
 		return
 	}
 
@@ -365,12 +431,13 @@ func daemonStatus() {
 		statusStr = "Running"
 	}
 	fmt.Printf("  Status:    %s\n", statusStr)
+	fmt.Printf("  Service:   %s\n", serviceName)
 	fmt.Printf("  Platform:  %s\n", st.Platform)
 	if st.PID > 0 {
 		fmt.Printf("  PID:       %d\n", st.PID)
 	}
 
-	if meta, err := daemon.LoadMeta(); err == nil {
+	if meta, err := daemon.LoadMetaForService(serviceName); err == nil {
 		fmt.Printf("  Log:       %s\n", meta.LogFile)
 		fmt.Printf("  WorkDir:   %s\n", meta.WorkDir)
 		if t, err := time.Parse(time.RFC3339, meta.InstalledAt); err == nil {
@@ -381,7 +448,7 @@ func daemonStatus() {
 
 // ── logs ────────────────────────────────────────────────────
 
-func daemonLogs(args []string) {
+func daemonLogs(serviceName string, args []string) {
 	follow := false
 	lines := 100
 	logFile := ""
@@ -406,10 +473,10 @@ func daemonLogs(args []string) {
 	}
 
 	if logFile == "" {
-		if meta, err := daemon.LoadMeta(); err == nil {
+		if meta, err := daemon.LoadMetaForService(serviceName); err == nil {
 			logFile = meta.LogFile
 		} else {
-			logFile = daemon.DefaultLogFile()
+			logFile = daemon.DefaultLogFileForService(serviceName)
 		}
 	}
 
@@ -474,8 +541,8 @@ func followFile(path string) {
 
 // ── helpers ─────────────────────────────────────────────────
 
-func mustManager() daemon.Manager {
-	mgr, err := daemon.NewManager()
+func mustManager(serviceName string) daemon.Manager {
+	mgr, err := daemon.NewManagerForService(serviceName)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -496,6 +563,8 @@ Commands:
   logs        View log output
 
 Install flags:
+  --service-name NAME   Named service instance (default: cc-connect; env:
+                        DIREXIO_CONNECT_SERVICE_NAME). Use one per Direxio node.
   --config PATH         Path to config.toml (uses its parent as work dir)
   --log-file PATH       Log file path (default: ~/.direxio-connect/logs/direxio-connect.log)
   --log-max-size N      Max log file size in MB (default: 10)

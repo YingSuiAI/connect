@@ -219,6 +219,86 @@ access_token = "${CAPTURE_CONFIG_SKIP}"
 	}
 }
 
+func TestNormalizeServiceName(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		want string
+	}{
+		{"", ServiceName},
+		{"  t1.direxio.ai  ", "t1.direxio.ai"},
+		{"direxio-t1", "direxio-t1"},
+		{"node_01", "node_01"},
+	} {
+		t.Run(tc.in, func(t *testing.T) {
+			got, err := NormalizeServiceName(tc.in)
+			if err != nil {
+				t.Fatalf("NormalizeServiceName(%q) error = %v", tc.in, err)
+			}
+			if got != tc.want {
+				t.Fatalf("NormalizeServiceName(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+
+	for _, bad := range []string{"-bad", "bad/name", "bad name", strings.Repeat("a", 82)} {
+		t.Run("bad="+bad, func(t *testing.T) {
+			if got, err := NormalizeServiceName(bad); err == nil {
+				t.Fatalf("NormalizeServiceName(%q) = %q, want error", bad, got)
+			}
+		})
+	}
+}
+
+func TestMetaSaveLoadForServiceIsolated(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	t1 := &Meta{
+		ServiceName:   "t1.direxio.ai",
+		LogFile:       "/tmp/t1.log",
+		WorkDir:       "/tmp/t1",
+		BinaryPath:    "/bin/t1",
+		InstalledAt:   NowISO(),
+		LogMaxSize:    1024,
+		LogMaxBackups: 3,
+	}
+	t2 := &Meta{
+		ServiceName:   "t2.direxio.ai",
+		LogFile:       "/tmp/t2.log",
+		WorkDir:       "/tmp/t2",
+		BinaryPath:    "/bin/t2",
+		InstalledAt:   NowISO(),
+		LogMaxSize:    2048,
+		LogMaxBackups: 4,
+	}
+
+	if err := SaveMetaForService(t1.ServiceName, t1); err != nil {
+		t.Fatalf("SaveMetaForService(t1): %v", err)
+	}
+	if err := SaveMetaForService(t2.ServiceName, t2); err != nil {
+		t.Fatalf("SaveMetaForService(t2): %v", err)
+	}
+
+	got1, err := LoadMetaForService(t1.ServiceName)
+	if err != nil {
+		t.Fatalf("LoadMetaForService(t1): %v", err)
+	}
+	if got1.WorkDir != t1.WorkDir || got1.LogFile != t1.LogFile {
+		t.Fatalf("loaded t1 meta = %+v, want %+v", got1, t1)
+	}
+
+	got2, err := LoadMetaForService(t2.ServiceName)
+	if err != nil {
+		t.Fatalf("LoadMetaForService(t2): %v", err)
+	}
+	if got2.WorkDir != t2.WorkDir || got2.LogFile != t2.LogFile {
+		t.Fatalf("loaded t2 meta = %+v, want %+v", got2, t2)
+	}
+
+	if metaPathForService(t1.ServiceName) == metaPathForService(t2.ServiceName) {
+		t.Fatal("custom services must not share metadata path")
+	}
+}
+
 func TestResolveIgnoresCommentedConfigEnvPlaceholders(t *testing.T) {
 	workDir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(workDir, "config.toml"), []byte(`

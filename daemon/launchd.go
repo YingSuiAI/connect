@@ -15,17 +15,15 @@ import (
 	"time"
 )
 
-const (
-	launchdLabel = "com.cc-connect.service"
-)
-
 var runLaunchctl = func(args ...string) (string, error) {
 	cmd := exec.Command("launchctl", args...)
 	out, err := cmd.CombinedOutput()
 	return strings.TrimSpace(string(out)), err
 }
 
-type launchdManager struct{}
+type launchdManager struct {
+	serviceName string
+}
 
 // CheckLinger always returns true on macOS: launchd user agents persist
 // independently of login sessions, so no "linger" warning is needed.
@@ -33,14 +31,15 @@ func CheckLinger() (enabled bool, user string) {
 	return true, ""
 }
 
-func newPlatformManager() (Manager, error) {
-	return &launchdManager{}, nil
+func newPlatformManager(serviceName string) (Manager, error) {
+	return &launchdManager{serviceName: mustNormalizeServiceName(serviceName)}, nil
 }
 
 func (*launchdManager) Platform() string { return "launchd" }
 
 func (m *launchdManager) Install(cfg Config) error {
-	plistPath := launchdPlistPath()
+	cfg.ServiceName = m.normalizedServiceName()
+	plistPath := launchdPlistPath(cfg.ServiceName)
 
 	if err := os.MkdirAll(filepath.Dir(plistPath), 0755); err != nil {
 		return fmt.Errorf("create LaunchAgents dir: %w", err)
@@ -51,7 +50,7 @@ func (m *launchdManager) Install(cfg Config) error {
 
 	// Unload existing service first (ignore errors) so we do not leave a stale
 	// job behind when switching between GUI and headless sessions.
-	bootoutLaunchdTargets()
+	bootoutLaunchdTargets(cfg.ServiceName)
 
 	plist := buildPlist(cfg)
 	// 0600: plist may contain captured secret values (config.toml ${ENV}
@@ -72,24 +71,25 @@ func (m *launchdManager) Install(cfg Config) error {
 		return fmt.Errorf("launchctl bootstrap: %s (%w)", out, err)
 	}
 
-	if _, err := runLaunchctl("kickstart", "-kp", launchdTarget(domain)); err != nil {
+	if _, err := runLaunchctl("kickstart", "-kp", launchdTarget(domain, cfg.ServiceName)); err != nil {
 		return fmt.Errorf("launchctl kickstart: %w", err)
 	}
 	return nil
 }
 
 func (m *launchdManager) Uninstall() error {
-	bootoutLaunchdTargets()
+	bootoutLaunchdTargets(m.normalizedServiceName())
 
-	plistPath := launchdPlistPath()
+	plistPath := launchdPlistPath(m.normalizedServiceName())
 	if err := os.Remove(plistPath); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("remove plist: %w", err)
 	}
 	return nil
 }
 
-func (*launchdManager) Start() error {
-	if _, target, _, ok := loadedLaunchdTarget(); ok {
+func (m *launchdManager) Start() error {
+	serviceName := m.normalizedServiceName()
+	if _, target, _, ok := loadedLaunchdTarget(serviceName); ok {
 		out, err := runLaunchctl("kickstart", "-kp", target)
 		if err != nil {
 			return fmt.Errorf("start: %s (%w)", out, err)
@@ -98,11 +98,11 @@ func (*launchdManager) Start() error {
 	}
 
 	domain := preferredLaunchdDomain()
-	plistPath := launchdPlistPath()
+	plistPath := launchdPlistPath(serviceName)
 	var out string
 	if _, err := runLaunchctl("bootstrap", domain, plistPath); err != nil {
 		// already bootstrapped — try kickstart
-		out, err = runLaunchctl("kickstart", "-kp", launchdTarget(domain))
+		out, err = runLaunchctl("kickstart", "-kp", launchdTarget(domain, serviceName))
 		if err != nil {
 			return fmt.Errorf("start: %s (%w)", out, err)
 		}
@@ -110,10 +110,10 @@ func (*launchdManager) Start() error {
 	return nil
 }
 
-func (*launchdManager) Stop() error {
+func (m *launchdManager) Stop() error {
 	var lastOut string
 	var lastErr error
-	for _, target := range launchdTargets() {
+	for _, target := range launchdTargets(m.normalizedServiceName()) {
 		out, err := runLaunchctl("bootout", target)
 		if err == nil {
 			return nil
@@ -127,15 +127,16 @@ func (*launchdManager) Stop() error {
 	return nil
 }
 
-func (*launchdManager) Restart() error {
+func (m *launchdManager) Restart() error {
+	serviceName := m.normalizedServiceName()
 	domain := preferredLaunchdDomain()
-	if loadedDomain, _, _, ok := loadedLaunchdTarget(); ok && domain != launchdGUIDomain() {
+	if loadedDomain, _, _, ok := loadedLaunchdTarget(serviceName); ok && domain != launchdGUIDomain() {
 		domain = loadedDomain
 	}
-	target := launchdTarget(domain)
-	bootoutLaunchdTargets()
+	target := launchdTarget(domain, serviceName)
+	bootoutLaunchdTargets(serviceName)
 
-	plistPath := launchdPlistPath()
+	plistPath := launchdPlistPath(serviceName)
 
 	// launchd bootout is asynchronous; retry bootstrap with backoff
 	// to avoid "Bootstrap failed: 5" race condition.
@@ -159,16 +160,17 @@ func (*launchdManager) Restart() error {
 	return nil
 }
 
-func (*launchdManager) Status() (*Status, error) {
-	st := &Status{Platform: "launchd"}
+func (m *launchdManager) Status() (*Status, error) {
+	serviceName := m.normalizedServiceName()
+	st := &Status{Platform: "launchd", Service: serviceName}
 
-	plistPath := launchdPlistPath()
+	plistPath := launchdPlistPath(serviceName)
 	if _, err := os.Stat(plistPath); err != nil {
 		return st, nil
 	}
 	st.Installed = true
 
-	_, _, out, ok := loadedLaunchdTarget()
+	_, _, out, ok := loadedLaunchdTarget(serviceName)
 	if !ok {
 		return st, nil
 	}
@@ -190,9 +192,29 @@ func (*launchdManager) Status() (*Status, error) {
 
 // ── helpers ─────────────────────────────────────────────────
 
-func launchdPlistPath() string {
+func (m *launchdManager) normalizedServiceName() string {
+	return mustNormalizeServiceName(m.serviceName)
+}
+
+func launchdServiceName(serviceNames ...string) string {
+	if len(serviceNames) == 0 {
+		return ServiceName
+	}
+	return mustNormalizeServiceName(serviceNames[0])
+}
+
+func launchdLabelForService(serviceName string) string {
+	normalized := mustNormalizeServiceName(serviceName)
+	if normalized == ServiceName {
+		return "com.cc-connect.service"
+	}
+	return "com.cc-connect." + normalized
+}
+
+func launchdPlistPath(serviceNames ...string) string {
+	serviceName := launchdServiceName(serviceNames...)
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, "Library", "LaunchAgents", launchdLabel+".plist")
+	return filepath.Join(home, "Library", "LaunchAgents", launchdLabelForService(serviceName)+".plist")
 }
 
 func launchdUserDomain() string {
@@ -221,22 +243,25 @@ func launchdDomains() []string {
 	return []string{userDomain, guiDomain}
 }
 
-func launchdTarget(domain string) string {
-	return fmt.Sprintf("%s/%s", domain, launchdLabel)
+func launchdTarget(domain string, serviceNames ...string) string {
+	serviceName := launchdServiceName(serviceNames...)
+	return fmt.Sprintf("%s/%s", domain, launchdLabelForService(serviceName))
 }
 
-func launchdTargets() []string {
+func launchdTargets(serviceNames ...string) []string {
+	serviceName := launchdServiceName(serviceNames...)
 	domains := launchdDomains()
 	targets := make([]string, 0, len(domains))
 	for _, domain := range domains {
-		targets = append(targets, launchdTarget(domain))
+		targets = append(targets, launchdTarget(domain, serviceName))
 	}
 	return targets
 }
 
-func loadedLaunchdTarget() (string, string, string, bool) {
+func loadedLaunchdTarget(serviceNames ...string) (string, string, string, bool) {
+	serviceName := launchdServiceName(serviceNames...)
 	for _, domain := range launchdDomains() {
-		target := launchdTarget(domain)
+		target := launchdTarget(domain, serviceName)
 		out, err := runLaunchctl("print", target)
 		if err == nil {
 			return domain, target, out, true
@@ -245,8 +270,9 @@ func loadedLaunchdTarget() (string, string, string, bool) {
 	return "", "", "", false
 }
 
-func bootoutLaunchdTargets() {
-	for _, target := range launchdTargets() {
+func bootoutLaunchdTargets(serviceNames ...string) {
+	serviceName := launchdServiceName(serviceNames...)
+	for _, target := range launchdTargets(serviceName) {
 		_, _ = runLaunchctl("bootout", target)
 	}
 }
@@ -297,6 +323,7 @@ func xmlEscape(s string) string {
 }
 
 func buildPlist(cfg Config) string {
+	serviceName := mustNormalizeServiceName(cfg.ServiceName)
 	envPATH := cfg.EnvPATH
 	if envPATH == "" {
 		envPATH = "/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin"
@@ -305,7 +332,7 @@ func buildPlist(cfg Config) string {
 	// User-supplied paths can legitimately contain XML-special characters
 	// ('&', '<', '>', '"', '\''). Without escaping, `launchctl bootstrap`
 	// rejects the plist with a parse error and daemon install fails. The
-	// label is a hard-coded constant; LogMaxSize is an int; envExtra is
+	// The launchd label is normalized; LogMaxSize is an int; envExtra is
 	// escaped by renderEnvExtraPlist.
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -348,6 +375,5 @@ func buildPlist(cfg Config) string {
 	<string>/dev/null</string>
 </dict>
 </plist>
-`, launchdLabel, xmlEscape(cfg.BinaryPath), xmlEscape(cfg.WorkDir), xmlEscape(cfg.LogFile), cfg.LogMaxSize, cfg.LogMaxBackups, xmlEscape(envPATH), envExtra)
+`, launchdLabelForService(serviceName), xmlEscape(cfg.BinaryPath), xmlEscape(cfg.WorkDir), xmlEscape(cfg.LogFile), cfg.LogMaxSize, cfg.LogMaxBackups, xmlEscape(envPATH), envExtra)
 }
-

@@ -45,6 +45,52 @@ func TestBuildPlist_KeepAliveDoesNotRestartOnCleanExit(t *testing.T) {
 	}
 }
 
+func TestBuildPlist_CustomServiceNameUsesDistinctLaunchdLabel(t *testing.T) {
+	cfg := Config{
+		ServiceName: "t1.direxio.ai",
+		BinaryPath:  "/opt/cc-connect/cc-connect",
+		WorkDir:     "/tmp/wd",
+		LogFile:     "/tmp/log",
+		LogMaxSize:  10485760,
+		EnvPATH:     "/usr/bin",
+	}
+	xml := buildPlist(cfg)
+	if !strings.Contains(xml, "<string>com.cc-connect.t1.direxio.ai</string>") {
+		t.Fatalf("custom launchd label missing from plist:\n%s", xml)
+	}
+	if strings.Contains(xml, "<string>com.cc-connect.service</string>") {
+		t.Fatalf("custom plist must not reuse default launchd label:\n%s", xml)
+	}
+
+	defaultPath := launchdPlistPath()
+	customPath := launchdPlistPath("t1.direxio.ai")
+	if customPath == defaultPath {
+		t.Fatal("custom service must use a distinct plist path")
+	}
+	if !strings.HasSuffix(customPath, "com.cc-connect.t1.direxio.ai.plist") {
+		t.Fatalf("custom plist path = %q", customPath)
+	}
+
+	target := launchdTarget(launchdGUIDomain(), "t1.direxio.ai")
+	if !strings.HasSuffix(target, "/com.cc-connect.t1.direxio.ai") {
+		t.Fatalf("custom target = %q", target)
+	}
+}
+
+func TestBuildPlist_DefaultServiceNameKeepsLegacyLaunchdLabel(t *testing.T) {
+	cfg := Config{
+		BinaryPath: "/opt/cc-connect/cc-connect",
+		WorkDir:    "/tmp/wd",
+		LogFile:    "/tmp/log",
+		LogMaxSize: 10485760,
+		EnvPATH:    "/usr/bin",
+	}
+	xml := buildPlist(cfg)
+	if !strings.Contains(xml, "<string>com.cc-connect.service</string>") {
+		t.Fatalf("default launchd label changed unexpectedly:\n%s", xml)
+	}
+}
+
 func TestPreferredLaunchdDomainFallsBackToUserWhenGUIDomainUnavailable(t *testing.T) {
 	orig := runLaunchctl
 	t.Cleanup(func() { runLaunchctl = orig })

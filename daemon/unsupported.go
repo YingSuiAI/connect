@@ -7,7 +7,8 @@ import (
 	"runtime"
 )
 
-func newPlatformManager() (Manager, error) {
+func newPlatformManager(serviceName string) (Manager, error) {
+	_ = serviceName
 	return nil, fmt.Errorf("daemon management is not supported on %s; use a process manager (e.g. nssm, pm2) instead", runtime.GOOS)
 }
 

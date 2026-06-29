@@ -21,10 +21,10 @@ brew install direxio-connect
 GitHub Releases:
 
 ```bash
-curl -L -o direxio-connect.tar.gz https://github.com/YingSuiAI/connect/releases/latest/download/direxio-connect-v1.3.3-linux-amd64.tar.gz
+curl -L -o direxio-connect.tar.gz https://github.com/YingSuiAI/connect/releases/latest/download/direxio-connect-v1.3.10-linux-amd64.tar.gz
 tar xzf direxio-connect.tar.gz
-chmod +x direxio-connect-v1.3.3-linux-amd64
-sudo mv direxio-connect-v1.3.3-linux-amd64 /usr/local/bin/direxio-connect
+chmod +x direxio-connect-v1.3.10-linux-amd64
+sudo mv direxio-connect-v1.3.10-linux-amd64 /usr/local/bin/direxio-connect
 ```
 
 源码构建:
@@ -70,10 +70,32 @@ auto_verify = false
 direxio-connect --config /path/to/config.toml
 ```
 
+### Hermes ACP Adapter
+
+Hermes ACP 应通过 Direxio 兼容层启动，这样推理文本会先被缓存和清洗，不会直接进入 Matrix agent room：
+
+```toml
+[projects.agent]
+type = "acp"
+
+[projects.agent.options]
+work_dir = "/path/to/project"
+cmd = "direxio-connect"
+args = ["hermes-acp-adapter", "--", "hermes", "acp"]
+display_name = "Hermes ACP"
+```
+
 安装后台服务:
 
 ```bash
 direxio-connect daemon install --config /path/to/config.toml --force
+```
+
+同一台电脑连接多个 Direxio 节点时，每个后台服务使用不同的 service name：
+
+```bash
+direxio-connect daemon install --config /path/to/t1/config.toml --service-name t1.direxio.ai --force
+direxio-connect daemon status --service-name t1.direxio.ai
 ```
 
 ## Direxio 约束

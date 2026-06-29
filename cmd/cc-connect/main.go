@@ -202,6 +202,14 @@ type providerWiringResult struct {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "hermes-acp-adapter" {
+		if err := runHermesACPAdapter(os.Args[2:]); err != nil {
+			fmt.Fprintf(os.Stderr, "%v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	checkUpdateAsync()
 
 	// Handle subcommands before flag parsing

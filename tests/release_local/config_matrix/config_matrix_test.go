@@ -31,7 +31,7 @@ type = "claudecode"
 work_dir = "/tmp/cc-connect-release-work"
 
 [[projects.platforms]]
-type = "feishu"
+type = "matrix"
 app_id = "cli_release"
 app_secret = "secret"
 `
@@ -64,7 +64,7 @@ type = "claudecode"
 work_dir = "/tmp/cc-connect-release-work"
 
 [[projects.platforms]]
-type = "feishu"
+type = "matrix"
 app_id = "cli_release"
 app_secret = "secret"
 `)
@@ -146,7 +146,7 @@ type = "claudecode"
 work_dir = "/tmp/cc-connect-release-work"
 
 [[projects.platforms]]
-type = "feishu"
+type = "matrix"
 app_id = "cli_release"
 app_secret = "secret"
 `)
@@ -217,7 +217,7 @@ type = "claudecode"
 work_dir = "/tmp/cc-connect-release-work"
 
 [[projects.platforms]]
-type = "feishu"
+type = "matrix"
 app_id = "cli_release"
 app_secret = "secret"
 `,
@@ -235,7 +235,7 @@ type = "claudecode"
 work_dir = "/tmp/cc-connect-release-work"
 
 [[projects.platforms]]
-type = "feishu"
+type = "matrix"
 app_id = "cli_release"
 app_secret = "secret"
 `,
