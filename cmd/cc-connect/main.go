@@ -277,6 +277,8 @@ func main() {
 		logCloser = w
 		slog.SetDefault(slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	}
+	cleanupPIDFile := setupPIDFileFromEnv()
+	defer cleanupPIDFile()
 
 	configFlag := flag.String("config", "", "path to config file (default: ./config.toml or ~/.direxio-connect/config.toml)")
 	showVersion := flag.Bool("version", false, "print version and exit")
@@ -1402,6 +1404,28 @@ func resolveConfigPath(explicit string) string {
 		return filepath.Join(home, ".direxio-connect", "config.toml")
 	}
 	return "config.toml"
+}
+
+func setupPIDFileFromEnv() func() {
+	pidFile := strings.TrimSpace(os.Getenv("CC_PID_FILE"))
+	if pidFile == "" {
+		return func() {}
+	}
+	if err := os.MkdirAll(filepath.Dir(pidFile), 0o755); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to create pid dir %s: %v\n", filepath.Dir(pidFile), err)
+		return func() {}
+	}
+	pid := strconv.Itoa(os.Getpid())
+	if err := os.WriteFile(pidFile, []byte(pid+"\n"), 0o600); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: failed to write pid file %s: %v\n", pidFile, err)
+		return func() {}
+	}
+	return func() {
+		data, err := os.ReadFile(pidFile)
+		if err == nil && strings.TrimSpace(string(data)) == pid {
+			_ = os.Remove(pidFile)
+		}
+	}
 }
 
 func bootstrapConfig(path string) error {

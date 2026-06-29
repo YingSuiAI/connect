@@ -21,10 +21,10 @@ brew install direxio-connect
 GitHub Releases:
 
 ```bash
-curl -L -o direxio-connect.tar.gz https://github.com/YingSuiAI/direxio-connect/releases/latest/download/direxio-connect-v1.3.14-linux-amd64.tar.gz
+curl -L -o direxio-connect.tar.gz https://github.com/YingSuiAI/direxio-connect/releases/latest/download/direxio-connect-v1.3.15-linux-amd64.tar.gz
 tar xzf direxio-connect.tar.gz
-chmod +x direxio-connect-v1.3.14-linux-amd64
-sudo mv direxio-connect-v1.3.14-linux-amd64 /usr/local/bin/direxio-connect
+chmod +x direxio-connect-v1.3.15-linux-amd64
+sudo mv direxio-connect-v1.3.15-linux-amd64 /usr/local/bin/direxio-connect
 ```
 
 源码构建:

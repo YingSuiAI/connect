@@ -70,14 +70,12 @@ func TestBuildWindowsTaskScript(t *testing.T) {
 }
 
 func TestWindowsTaskActionRunsHidden(t *testing.T) {
-	got := windowsTaskAction(`C:\Users\me\.cc-connect\cc-connect-daemon.ps1`)
+	got := windowsTaskAction(`C:\Users\me\.cc-connect\cc-connect-daemon.vbs`)
 	for _, want := range []string{
-		`powershell.exe`,
-		`-WindowStyle Hidden`,
-		`-NoProfile`,
-		`-NonInteractive`,
-		`-ExecutionPolicy Bypass`,
-		`-File "C:\Users\me\.cc-connect\cc-connect-daemon.ps1"`,
+		`wscript.exe`,
+		`//B`,
+		`//Nologo`,
+		`"C:\Users\me\.cc-connect\cc-connect-daemon.vbs"`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("windowsTaskAction() missing %q: %q", want, got)
@@ -93,13 +91,55 @@ func TestWindowsCustomServiceNameUsesDistinctTaskAndScript(t *testing.T) {
 		t.Fatalf("default task name = %q, want cc-connect", got)
 	}
 
-	custom := windowsTaskScriptPath("t1.direxio.ai")
-	defaultPath := windowsTaskScriptPath()
-	if custom == defaultPath {
+	customScript := windowsTaskScriptPath("t1.direxio.ai")
+	defaultScript := windowsTaskScriptPath()
+	if customScript == defaultScript {
 		t.Fatal("custom service must not share default task script path")
 	}
-	if !strings.HasSuffix(custom, "cc-connect-daemon-t1.direxio.ai.ps1") {
-		t.Fatalf("custom script path = %q", custom)
+	if !strings.HasSuffix(customScript, "cc-connect-daemon-t1.direxio.ai.ps1") {
+		t.Fatalf("custom script path = %q", customScript)
+	}
+
+	customLauncher := windowsTaskLauncherPath("t1.direxio.ai")
+	defaultLauncher := windowsTaskLauncherPath()
+	if customLauncher == defaultLauncher {
+		t.Fatal("custom service must not share default task launcher path")
+	}
+	if !strings.HasSuffix(customLauncher, "cc-connect-daemon-t1.direxio.ai.vbs") {
+		t.Fatalf("custom launcher path = %q", customLauncher)
+	}
+}
+
+func TestBuildWindowsTaskLauncherUsesWScriptHiddenRun(t *testing.T) {
+	cfg := Config{
+		BinaryPath: `C:\Program Files\cc-connect\cc-connect.exe`,
+		WorkDir:    `C:\Users\me\.cc-connect`,
+		LogFile:    `C:\Users\me\.cc-connect\logs\cc-connect.log`,
+		LogMaxSize: 10 * 1024 * 1024,
+		EnvPATH:    `C:\Program Files\nodejs`,
+		EnvExtra:   map[string]string{"HTTPS_PROXY": "http://127.0.0.1:7890"},
+	}
+	launcher := buildWindowsTaskLauncher(cfg)
+	for _, want := range []string{
+		`Option Explicit`,
+		`Set shell = CreateObject("WScript.Shell")`,
+		`Set env = shell.Environment("PROCESS")`,
+		`env("CC_LOG_FILE") = "C:\Users\me\.cc-connect\logs\cc-connect.log"`,
+		`env("CC_PID_FILE") = "C:\Users\me\.cc-connect\logs\cc-connect.log.pid"`,
+		`env("PATH") = "C:\Program Files\nodejs"`,
+		`env("HTTPS_PROXY") = "http://127.0.0.1:7890"`,
+		`shell.CurrentDirectory = "C:\Users\me\.cc-connect"`,
+		`cmd.exe /d /q /s /c """"C:\Program Files\cc-connect\cc-connect.exe"" --force""`,
+		`, 0, True`,
+		`If exitCode = 0 Then WScript.Quit 0`,
+		`WScript.Sleep 10000`,
+	} {
+		if !strings.Contains(launcher, want) {
+			t.Fatalf("launcher missing %q:\n%s", want, launcher)
+		}
+	}
+	if strings.Contains(launcher, "powershell.exe") {
+		t.Fatalf("launcher must not start PowerShell:\n%s", launcher)
 	}
 }
 
@@ -113,7 +153,7 @@ func TestWindowsTaskCreateUsesLimitedInteractivePrincipal(t *testing.T) {
 		return "", nil
 	}
 
-	if err := createWindowsTask(`C:\Users\me\.cc-connect\cc-connect-daemon.ps1`); err != nil {
+	if err := createWindowsTask(`C:\Users\me\.cc-connect\cc-connect-daemon.vbs`); err != nil {
 		t.Fatalf("createWindowsTask() error = %v", err)
 	}
 	for _, want := range []string{
@@ -121,8 +161,8 @@ func TestWindowsTaskCreateUsesLimitedInteractivePrincipal(t *testing.T) {
 		`Register-ScheduledTask`,
 		`-LogonType Interactive`,
 		`-RunLevel Limited`,
-		`-WindowStyle Hidden`,
-		`C:\Users\me\.cc-connect\cc-connect-daemon.ps1`,
+		`wscript.exe`,
+		`//B //Nologo "C:\Users\me\.cc-connect\cc-connect-daemon.vbs"`,
 	} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("create script missing %q:\n%s", want, script)
@@ -140,12 +180,12 @@ func TestWindowsTaskMatchesActionRequiresExactAction(t *testing.T) {
 		return "true", nil
 	}
 
-	if !windowsTaskMatchesAction(`C:\Users\me\.cc-connect\cc-connect-daemon.ps1`) {
+	if !windowsTaskMatchesAction(`C:\Users\me\.cc-connect\cc-connect-daemon.vbs`) {
 		t.Fatal("windowsTaskMatchesAction() = false, want true")
 	}
 	for _, want := range []string{
-		`$expectedArgs = '-WindowStyle Hidden -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "C:\Users\me\.cc-connect\cc-connect-daemon.ps1"'`,
-		`$action.Execute -ieq 'powershell.exe'`,
+		`$expectedArgs = '//B //Nologo "C:\Users\me\.cc-connect\cc-connect-daemon.vbs"'`,
+		`$action.Execute -ieq 'wscript.exe'`,
 		`$action.Arguments -eq $expectedArgs`,
 	} {
 		if !strings.Contains(script, want) {
@@ -260,12 +300,42 @@ func TestStopWindowsChildProcessUsesServicePidFile(t *testing.T) {
 	for _, want := range []string{
 		`$pidPath = 'C:\Users\me\.cc-connect\logs\q1.direxio.ai.log.pid'`,
 		`Get-Content -LiteralPath $pidPath`,
-		`[int]::TryParse($rawPid, [ref]$pidValue)`,
-		`Stop-Process -Id $pidValue -Force`,
+		`$pidValue = [int]$pidText`,
+		`Stop-Process -Id $pidValue -Force -ErrorAction SilentlyContinue`,
+		`Wait-Process -Id $pidValue -Timeout 5 -ErrorAction SilentlyContinue`,
 		`Remove-Item -LiteralPath $pidPath -Force -ErrorAction SilentlyContinue`,
+		`exit 0`,
 	} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("stop child script missing %q:\n%s", want, script)
+		}
+	}
+}
+
+func TestStopWindowsWrapperProcessesKillsLegacyPowerShellAndLauncher(t *testing.T) {
+	orig := runPowerShell
+	t.Cleanup(func() { runPowerShell = orig })
+
+	var script string
+	runPowerShell = func(s string) (string, error) {
+		script = s
+		return "", nil
+	}
+
+	if err := stopWindowsWrapperProcesses("q1.direxio.ai"); err != nil {
+		t.Fatalf("stopWindowsWrapperProcesses: %v", err)
+	}
+
+	for _, want := range []string{
+		`cc-connect-daemon-q1.direxio.ai.ps1`,
+		`cc-connect-daemon-q1.direxio.ai.vbs`,
+		`$_.ProcessId -ne $currentPid`,
+		`$_.Name -ieq 'powershell.exe'`,
+		`$_.Name -ieq 'wscript.exe'`,
+		`Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue`,
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("stop wrapper script missing %q:\n%s", want, script)
 		}
 	}
 }

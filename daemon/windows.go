@@ -14,7 +14,8 @@ import (
 )
 
 const (
-	windowsScriptName = "cc-connect-daemon.ps1"
+	windowsScriptName   = "cc-connect-daemon.ps1"
+	windowsLauncherName = "cc-connect-daemon.vbs"
 )
 
 var runPowerShell = func(script string) (string, error) {
@@ -50,6 +51,7 @@ func (m *schtasksManager) Install(cfg Config) error {
 	}
 
 	scriptPath := windowsTaskScriptPath(cfg.ServiceName)
+	launcherPath := windowsTaskLauncherPath(cfg.ServiceName)
 	// 0644 has weak semantics on Windows; the file ACL is what matters.
 	// We still write 0600 so the file's POSIX bits do not advertise read
 	// access, and rely on the user's own profile ACLs for primary defense
@@ -62,15 +64,24 @@ func (m *schtasksManager) Install(cfg Config) error {
 	if err := os.Chmod(scriptPath, 0600); err != nil {
 		return fmt.Errorf("chmod task script: %w", err)
 	}
+	if err := os.WriteFile(launcherPath, []byte(buildWindowsTaskLauncher(cfg)), 0600); err != nil {
+		return fmt.Errorf("write task launcher: %w", err)
+	}
+	if err := os.Chmod(launcherPath, 0600); err != nil {
+		return fmt.Errorf("chmod task launcher: %w", err)
+	}
 
 	if err := stopWindowsTask(cfg.ServiceName); err != nil {
 		slog.Warn("schtasks: stop existing task failed", "error", err)
+	}
+	if err := stopWindowsWrapperProcesses(cfg.ServiceName); err != nil {
+		slog.Warn("schtasks: stop existing wrapper processes failed", "error", err)
 	}
 	if err := stopWindowsChildProcess(cfg.ServiceName); err != nil {
 		slog.Warn("schtasks: stop existing child process failed", "error", err)
 	}
 	if err := deleteWindowsTask(cfg.ServiceName); err != nil {
-		if windowsTaskMatchesAction(scriptPath, cfg.ServiceName) {
+		if windowsTaskMatchesAction(launcherPath, cfg.ServiceName) {
 			if err := m.Start(); err != nil {
 				return fmt.Errorf("start existing task: %w", err)
 			}
@@ -79,7 +90,7 @@ func (m *schtasksManager) Install(cfg Config) error {
 		return err
 	}
 
-	if err := createWindowsTask(scriptPath, cfg.ServiceName); err != nil {
+	if err := createWindowsTask(launcherPath, cfg.ServiceName); err != nil {
 		return err
 	}
 
@@ -93,6 +104,9 @@ func (m *schtasksManager) Uninstall() error {
 	if err := stopWindowsTask(m.normalizedServiceName()); err != nil {
 		slog.Warn("schtasks: stop task failed", "error", err)
 	}
+	if err := stopWindowsWrapperProcesses(m.normalizedServiceName()); err != nil {
+		slog.Warn("schtasks: stop wrapper processes failed", "error", err)
+	}
 	if err := stopWindowsChildProcess(m.normalizedServiceName()); err != nil {
 		slog.Warn("schtasks: stop child process failed", "error", err)
 	}
@@ -101,6 +115,9 @@ func (m *schtasksManager) Uninstall() error {
 	}
 	if err := os.Remove(windowsTaskScriptPath(m.normalizedServiceName())); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("remove task script: %w", err)
+	}
+	if err := os.Remove(windowsTaskLauncherPath(m.normalizedServiceName())); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove task launcher: %w", err)
 	}
 	return nil
 }
@@ -111,6 +128,9 @@ func (m *schtasksManager) Start() error {
 
 func (m *schtasksManager) Stop() error {
 	if err := stopWindowsTask(m.normalizedServiceName()); err != nil {
+		return err
+	}
+	if err := stopWindowsWrapperProcesses(m.normalizedServiceName()); err != nil {
 		return err
 	}
 	if err := stopWindowsChildProcess(m.normalizedServiceName()); err != nil {
@@ -175,43 +195,95 @@ func windowsTaskScriptPath(serviceNames ...string) string {
 	return filepath.Join(DefaultDataDir(), scriptName)
 }
 
-func windowsTaskAction(scriptPath string) string {
-	return fmt.Sprintf(`powershell.exe %s`, windowsTaskActionArgs(scriptPath))
+func windowsTaskLauncherPath(serviceNames ...string) string {
+	serviceName := windowsServiceName(serviceNames...)
+	launcherName := windowsLauncherName
+	if serviceName != ServiceName {
+		launcherName = "cc-connect-daemon-" + serviceName + ".vbs"
+	}
+	return filepath.Join(DefaultDataDir(), launcherName)
 }
 
-func windowsTaskActionArgs(scriptPath string) string {
-	return fmt.Sprintf(`-WindowStyle Hidden -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%s"`, scriptPath)
+func windowsTaskAction(launcherPath string) string {
+	return fmt.Sprintf(`wscript.exe %s`, windowsTaskActionArgs(launcherPath))
 }
 
-func createWindowsTask(scriptPath string, serviceNames ...string) error {
+func windowsTaskActionArgs(launcherPath string) string {
+	return fmt.Sprintf(`//B //Nologo "%s"`, launcherPath)
+}
+
+func createWindowsTask(launcherPath string, serviceNames ...string) error {
 	serviceName := windowsServiceName(serviceNames...)
 	out, err := runPowerShell(fmt.Sprintf(`
-$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument %s
+$action = New-ScheduledTaskAction -Execute 'wscript.exe' -Argument %s
 $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
 $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
 Register-ScheduledTask -TaskName %s -Action $action -Trigger $trigger -Principal $principal -Force | Out-Null
-`, powerShellLiteral(windowsTaskActionArgs(scriptPath)), powerShellLiteral(windowsTaskNameForService(serviceName))))
+`, powerShellLiteral(windowsTaskActionArgs(launcherPath)), powerShellLiteral(windowsTaskNameForService(serviceName))))
 	if err != nil {
 		return fmt.Errorf("register scheduled task: %s (%w)", out, err)
 	}
 	return nil
 }
 
-func windowsTaskMatchesAction(scriptPath string, serviceNames ...string) bool {
+func windowsTaskMatchesAction(launcherPath string, serviceNames ...string) bool {
 	serviceName := windowsServiceName(serviceNames...)
 	out, err := runPowerShell(fmt.Sprintf(`
 $task = Get-ScheduledTask -TaskName %s -ErrorAction SilentlyContinue
 if ($null -eq $task) { exit 1 }
 $expectedArgs = %s
 foreach ($action in $task.Actions) {
-	if (($action.Execute -ieq 'powershell.exe') -and ($action.Arguments -eq $expectedArgs)) {
+	if (($action.Execute -ieq 'wscript.exe') -and ($action.Arguments -eq $expectedArgs)) {
 		Write-Output 'true'
 		exit 0
 	}
 }
 exit 1
-`, powerShellLiteral(windowsTaskNameForService(serviceName)), powerShellLiteral(windowsTaskActionArgs(scriptPath))))
+`, powerShellLiteral(windowsTaskNameForService(serviceName)), powerShellLiteral(windowsTaskActionArgs(launcherPath))))
 	return err == nil && strings.EqualFold(strings.TrimSpace(out), "true")
+}
+
+func buildWindowsTaskLauncher(cfg Config) string {
+	var sb strings.Builder
+	sb.WriteString("Option Explicit\r\n")
+	sb.WriteString("Dim shell, env, exitCode\r\n")
+	sb.WriteString("Set shell = CreateObject(\"WScript.Shell\")\r\n")
+	sb.WriteString("Set env = shell.Environment(\"PROCESS\")\r\n")
+	writeVBScriptEnv(&sb, "CC_LOG_FILE", cfg.LogFile)
+	writeVBScriptEnv(&sb, "CC_LOG_MAX_SIZE", strconv.FormatInt(cfg.LogMaxSize, 10))
+	writeVBScriptEnv(&sb, "CC_LOG_MAX_BACKUPS", strconv.Itoa(cfg.LogMaxBackups))
+	writeVBScriptEnv(&sb, "CC_PID_FILE", cfg.LogFile+".pid")
+	if cfg.EnvPATH != "" {
+		writeVBScriptEnv(&sb, "PATH", cfg.EnvPATH)
+	}
+	if len(cfg.EnvExtra) > 0 {
+		keys := make([]string, 0, len(cfg.EnvExtra))
+		for key := range cfg.EnvExtra {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			if !isValidEnvName(key) {
+				slog.Warn("daemon: windows: dropping invalid env name from EnvExtra",
+					"key", key)
+				continue
+			}
+			value := cfg.EnvExtra[key]
+			if value == "" {
+				continue
+			}
+			writeVBScriptEnv(&sb, key, value)
+		}
+	}
+	fmt.Fprintf(&sb, "shell.CurrentDirectory = %s\r\n", vbScriptStringLiteral(cfg.WorkDir))
+	innerCommand := windowsCommandLineArg(cfg.BinaryPath) + " --force"
+	command := `cmd.exe /d /q /s /c "` + innerCommand + `"`
+	sb.WriteString("Do\r\n")
+	fmt.Fprintf(&sb, "  exitCode = shell.Run(%s, 0, True)\r\n", vbScriptStringLiteral(command))
+	sb.WriteString("  If exitCode = 0 Then WScript.Quit 0\r\n")
+	sb.WriteString("  WScript.Sleep 10000\r\n")
+	sb.WriteString("Loop\r\n")
+	return sb.String()
 }
 
 func buildWindowsTaskScript(cfg Config) string {
@@ -275,10 +347,24 @@ func writePowerShellEnv(sb *strings.Builder, key, value string) {
 	fmt.Fprintf(sb, "$env:%s = %s\r\n", key, powerShellLiteral(value))
 }
 
+func writeVBScriptEnv(sb *strings.Builder, key, value string) {
+	fmt.Fprintf(sb, "env(%s) = %s\r\n", vbScriptStringLiteral(key), vbScriptStringLiteral(value))
+}
+
 func powerShellLiteral(value string) string {
 	value = strings.ReplaceAll(value, "\r", " ")
 	value = strings.ReplaceAll(value, "\n", " ")
 	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
+}
+
+func windowsCommandLineArg(value string) string {
+	return `"` + strings.ReplaceAll(value, `"`, `\"`) + `"`
+}
+
+func vbScriptStringLiteral(value string) string {
+	value = strings.ReplaceAll(value, "\r", " ")
+	value = strings.ReplaceAll(value, "\n", " ")
+	return `"` + strings.ReplaceAll(value, `"`, `""`) + `"`
 }
 
 func stopWindowsTask(serviceNames ...string) error {
@@ -303,6 +389,32 @@ exit 1
 	return nil
 }
 
+func stopWindowsWrapperProcesses(serviceNames ...string) error {
+	serviceName := windowsServiceName(serviceNames...)
+	scriptPath := windowsTaskScriptPath(serviceName)
+	launcherPath := windowsTaskLauncherPath(serviceName)
+	out, err := runPowerShell(fmt.Sprintf(`
+$paths = @(%s, %s)
+$currentPid = $PID
+Get-CimInstance Win32_Process | Where-Object {
+	$_.ProcessId -ne $currentPid -and
+	(($_.Name -ieq 'powershell.exe') -or ($_.Name -ieq 'wscript.exe')) -and
+	$null -ne $_.CommandLine -and
+	(
+		([string]$_.CommandLine).IndexOf($paths[0], [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+		([string]$_.CommandLine).IndexOf($paths[1], [StringComparison]::OrdinalIgnoreCase) -ge 0
+	)
+} | ForEach-Object {
+	Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+}
+exit 0
+`, powerShellLiteral(scriptPath), powerShellLiteral(launcherPath)))
+	if err != nil {
+		return fmt.Errorf("stop scheduled task wrapper processes: %s (%w)", out, err)
+	}
+	return nil
+}
+
 func stopWindowsChildProcess(serviceNames ...string) error {
 	serviceName := windowsServiceName(serviceNames...)
 	meta, err := LoadMetaForService(serviceName)
@@ -314,21 +426,20 @@ func stopWindowsChildProcess(serviceNames ...string) error {
 $pidPath = %s
 if (-not (Test-Path -LiteralPath $pidPath)) { exit 0 }
 $rawPid = (Get-Content -LiteralPath $pidPath -ErrorAction SilentlyContinue | Select-Object -First 1)
-$pidValue = 0
-if (-not [int]::TryParse($rawPid, [ref]$pidValue)) {
+$pidText = ([string]$rawPid).Trim()
+try {
+	$pidValue = [int]$pidText
+} catch {
 	Remove-Item -LiteralPath $pidPath -Force -ErrorAction SilentlyContinue
 	exit 0
 }
 $process = Get-Process -Id $pidValue -ErrorAction SilentlyContinue
 if ($null -ne $process) {
-	Stop-Process -Id $pidValue -Force
-	for ($i = 0; $i -lt 20; $i++) {
-		$process = Get-Process -Id $pidValue -ErrorAction SilentlyContinue
-		if ($null -eq $process) { break }
-		Start-Sleep -Milliseconds 250
-	}
+	Stop-Process -Id $pidValue -Force -ErrorAction SilentlyContinue
+	Wait-Process -Id $pidValue -Timeout 5 -ErrorAction SilentlyContinue
 }
 Remove-Item -LiteralPath $pidPath -Force -ErrorAction SilentlyContinue
+exit 0
 `, powerShellLiteral(pidPath)))
 	if err != nil {
 		return fmt.Errorf("stop scheduled task child process: %s (%w)", out, err)
