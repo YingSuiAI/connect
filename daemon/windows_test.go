@@ -42,8 +42,13 @@ func TestBuildWindowsTaskScript(t *testing.T) {
 		`$binaryPath = 'C:\Program Files\cc-connect\cc-connect.exe'`,
 		`$stdoutPath = "$env:CC_LOG_FILE.stdout"`,
 		`$stderrPath = "$env:CC_LOG_FILE.stderr"`,
+		`$pidPath = "$env:CC_LOG_FILE.pid"`,
+		`$argumentList = @('--force')`,
 		`while ($true) {`,
-		`Start-Process -FilePath $binaryPath -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath`,
+		`Start-Process -FilePath $binaryPath -ArgumentList $argumentList -WindowStyle Hidden -PassThru -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath`,
+		`Set-Content -LiteralPath $pidPath -Value ([string]$process.Id) -Encoding ASCII`,
+		`$process.WaitForExit()`,
+		`Remove-Item -LiteralPath $pidPath -Force -ErrorAction SilentlyContinue`,
 		`if ($exitCode -eq 0) { exit 0 }`,
 		`Start-Sleep -Seconds 10`,
 	} {
@@ -193,8 +198,11 @@ func TestSchtasksInstall_TightensExistingScriptFrom0644(t *testing.T) {
 	if err := os.WriteFile(scriptPath, []byte("$env:OLD = 'leftover'\r\n"), 0o644); err != nil {
 		t.Fatalf("seed legacy script: %v", err)
 	}
+	if err := os.Chmod(scriptPath, 0o644); err != nil {
+		t.Fatalf("chmod legacy script: %v", err)
+	}
 	if info, _ := os.Stat(scriptPath); info.Mode().Perm() != 0o644 {
-		t.Fatalf("precondition: seeded file mode = %o, want 0644", info.Mode().Perm())
+		t.Skipf("filesystem does not report POSIX mode changes on this Windows volume: got %o, want 0644", info.Mode().Perm())
 	}
 
 	mgr := &schtasksManager{}
@@ -215,5 +223,41 @@ func TestSchtasksInstall_TightensExistingScriptFrom0644(t *testing.T) {
 	}
 	if info.Mode().Perm() != 0o600 {
 		t.Errorf("script mode after reinstall = %o, want 0600", info.Mode().Perm())
+	}
+}
+
+func TestStopWindowsChildProcessUsesServicePidFile(t *testing.T) {
+	t.Setenv("USERPROFILE", t.TempDir())
+
+	orig := runPowerShell
+	t.Cleanup(func() { runPowerShell = orig })
+
+	var script string
+	runPowerShell = func(s string) (string, error) {
+		script = s
+		return "", nil
+	}
+
+	if err := SaveMetaForService("q1.direxio.ai", &Meta{
+		ServiceName: "q1.direxio.ai",
+		LogFile:     `C:\Users\me\.cc-connect\logs\q1.direxio.ai.log`,
+	}); err != nil {
+		t.Fatalf("SaveMetaForService: %v", err)
+	}
+
+	if err := stopWindowsChildProcess("q1.direxio.ai"); err != nil {
+		t.Fatalf("stopWindowsChildProcess: %v", err)
+	}
+
+	for _, want := range []string{
+		`$pidPath = 'C:\Users\me\.cc-connect\logs\q1.direxio.ai.log.pid'`,
+		`Get-Content -LiteralPath $pidPath`,
+		`[int]::TryParse($rawPid, [ref]$pidValue)`,
+		`Stop-Process -Id $pidValue -Force`,
+		`Remove-Item -LiteralPath $pidPath -Force -ErrorAction SilentlyContinue`,
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("stop child script missing %q:\n%s", want, script)
+		}
 	}
 }

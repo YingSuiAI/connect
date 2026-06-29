@@ -66,6 +66,9 @@ func (m *schtasksManager) Install(cfg Config) error {
 	if err := stopWindowsTask(cfg.ServiceName); err != nil {
 		slog.Warn("schtasks: stop existing task failed", "error", err)
 	}
+	if err := stopWindowsChildProcess(cfg.ServiceName); err != nil {
+		slog.Warn("schtasks: stop existing child process failed", "error", err)
+	}
 	if err := deleteWindowsTask(cfg.ServiceName); err != nil {
 		if windowsTaskMatchesAction(scriptPath, cfg.ServiceName) {
 			if err := m.Start(); err != nil {
@@ -90,6 +93,9 @@ func (m *schtasksManager) Uninstall() error {
 	if err := stopWindowsTask(m.normalizedServiceName()); err != nil {
 		slog.Warn("schtasks: stop task failed", "error", err)
 	}
+	if err := stopWindowsChildProcess(m.normalizedServiceName()); err != nil {
+		slog.Warn("schtasks: stop child process failed", "error", err)
+	}
 	if err := deleteWindowsTask(m.normalizedServiceName()); err != nil {
 		return err
 	}
@@ -105,6 +111,9 @@ func (m *schtasksManager) Start() error {
 
 func (m *schtasksManager) Stop() error {
 	if err := stopWindowsTask(m.normalizedServiceName()); err != nil {
+		return err
+	}
+	if err := stopWindowsChildProcess(m.normalizedServiceName()); err != nil {
 		return err
 	}
 	return nil
@@ -237,9 +246,14 @@ func buildWindowsTaskScript(cfg Config) string {
 	fmt.Fprintf(&sb, "$binaryPath = %s\r\n", powerShellLiteral(cfg.BinaryPath))
 	sb.WriteString("$stdoutPath = \"$env:CC_LOG_FILE.stdout\"\r\n")
 	sb.WriteString("$stderrPath = \"$env:CC_LOG_FILE.stderr\"\r\n")
+	sb.WriteString("$pidPath = \"$env:CC_LOG_FILE.pid\"\r\n")
+	sb.WriteString("$argumentList = @('--force')\r\n")
 	sb.WriteString("while ($true) {\r\n")
-	sb.WriteString("  $process = Start-Process -FilePath $binaryPath -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath\r\n")
+	sb.WriteString("  $process = Start-Process -FilePath $binaryPath -ArgumentList $argumentList -WindowStyle Hidden -PassThru -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath\r\n")
+	sb.WriteString("  Set-Content -LiteralPath $pidPath -Value ([string]$process.Id) -Encoding ASCII\r\n")
+	sb.WriteString("  $process.WaitForExit()\r\n")
 	sb.WriteString("  $exitCode = $process.ExitCode\r\n")
+	sb.WriteString("  Remove-Item -LiteralPath $pidPath -Force -ErrorAction SilentlyContinue\r\n")
 	sb.WriteString("  if ($exitCode -eq 0) { exit 0 }\r\n")
 	sb.WriteString("  Start-Sleep -Seconds 10\r\n")
 	sb.WriteString("}\r\n")
@@ -274,6 +288,39 @@ exit 1
 `, powerShellLiteral(windowsTaskNameForService(serviceName)), powerShellLiteral(windowsTaskNameForService(serviceName)), powerShellLiteral(windowsTaskNameForService(serviceName))))
 	if err != nil {
 		return fmt.Errorf("stop scheduled task: %s (%w)", out, err)
+	}
+	return nil
+}
+
+func stopWindowsChildProcess(serviceNames ...string) error {
+	serviceName := windowsServiceName(serviceNames...)
+	meta, err := LoadMetaForService(serviceName)
+	if err != nil || meta == nil || strings.TrimSpace(meta.LogFile) == "" {
+		return nil
+	}
+	pidPath := meta.LogFile + ".pid"
+	out, err := runPowerShell(fmt.Sprintf(`
+$pidPath = %s
+if (-not (Test-Path -LiteralPath $pidPath)) { exit 0 }
+$rawPid = (Get-Content -LiteralPath $pidPath -ErrorAction SilentlyContinue | Select-Object -First 1)
+$pidValue = 0
+if (-not [int]::TryParse($rawPid, [ref]$pidValue)) {
+	Remove-Item -LiteralPath $pidPath -Force -ErrorAction SilentlyContinue
+	exit 0
+}
+$process = Get-Process -Id $pidValue -ErrorAction SilentlyContinue
+if ($null -ne $process) {
+	Stop-Process -Id $pidValue -Force
+	for ($i = 0; $i -lt 20; $i++) {
+		$process = Get-Process -Id $pidValue -ErrorAction SilentlyContinue
+		if ($null -eq $process) { break }
+		Start-Sleep -Milliseconds 250
+	}
+}
+Remove-Item -LiteralPath $pidPath -Force -ErrorAction SilentlyContinue
+`, powerShellLiteral(pidPath)))
+	if err != nil {
+		return fmt.Errorf("stop scheduled task child process: %s (%w)", out, err)
 	}
 	return nil
 }
