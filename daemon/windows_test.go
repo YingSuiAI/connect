@@ -39,14 +39,20 @@ func TestBuildWindowsTaskScript(t *testing.T) {
 		`$env:HTTPS_PROXY = 'http://127.0.0.1:7890'`,
 		`$env:http_proxy = 'http://127.0.0.1:7890'`,
 		`Set-Location -LiteralPath 'C:\Users\me\.cc-connect'`,
+		`$binaryPath = 'C:\Program Files\cc-connect\cc-connect.exe'`,
+		`$stdoutPath = "$env:CC_LOG_FILE.stdout"`,
+		`$stderrPath = "$env:CC_LOG_FILE.stderr"`,
 		`while ($true) {`,
-		`& 'C:\Program Files\cc-connect\cc-connect.exe'`,
+		`Start-Process -FilePath $binaryPath -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath`,
 		`if ($exitCode -eq 0) { exit 0 }`,
 		`Start-Sleep -Seconds 10`,
 	} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("script missing %q:\n%s", want, script)
 		}
+	}
+	if strings.Contains(script, `& 'C:\Program Files\cc-connect\cc-connect.exe'`) {
+		t.Fatalf("script must not launch the console binary directly:\n%s", script)
 	}
 }
 

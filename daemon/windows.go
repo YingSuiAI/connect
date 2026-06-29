@@ -234,9 +234,12 @@ func buildWindowsTaskScript(cfg Config) string {
 		}
 	}
 	fmt.Fprintf(&sb, "Set-Location -LiteralPath %s\r\n", powerShellLiteral(cfg.WorkDir))
+	fmt.Fprintf(&sb, "$binaryPath = %s\r\n", powerShellLiteral(cfg.BinaryPath))
+	sb.WriteString("$stdoutPath = \"$env:CC_LOG_FILE.stdout\"\r\n")
+	sb.WriteString("$stderrPath = \"$env:CC_LOG_FILE.stderr\"\r\n")
 	sb.WriteString("while ($true) {\r\n")
-	fmt.Fprintf(&sb, "  & %s\r\n", powerShellLiteral(cfg.BinaryPath))
-	sb.WriteString("  $exitCode = $LASTEXITCODE\r\n")
+	sb.WriteString("  $process = Start-Process -FilePath $binaryPath -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath\r\n")
+	sb.WriteString("  $exitCode = $process.ExitCode\r\n")
 	sb.WriteString("  if ($exitCode -eq 0) { exit 0 }\r\n")
 	sb.WriteString("  Start-Sleep -Seconds 10\r\n")
 	sb.WriteString("}\r\n")
