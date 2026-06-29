@@ -40,12 +40,17 @@ func TestBuildWindowsTaskScript(t *testing.T) {
 		`$env:http_proxy = 'http://127.0.0.1:7890'`,
 		`Set-Location -LiteralPath 'C:\Users\me\.cc-connect'`,
 		`$binaryPath = 'C:\Program Files\cc-connect\cc-connect.exe'`,
-		`$stdoutPath = "$env:CC_LOG_FILE.stdout"`,
-		`$stderrPath = "$env:CC_LOG_FILE.stderr"`,
 		`$pidPath = "$env:CC_LOG_FILE.pid"`,
-		`$argumentList = @('--force')`,
 		`while ($true) {`,
-		`Start-Process -FilePath $binaryPath -ArgumentList $argumentList -WindowStyle Hidden -PassThru -RedirectStandardOutput $stdoutPath -RedirectStandardError $stderrPath`,
+		`$startInfo = [System.Diagnostics.ProcessStartInfo]::new()`,
+		`$startInfo.FileName = $binaryPath`,
+		`$startInfo.Arguments = '--force'`,
+		`$startInfo.UseShellExecute = $false`,
+		`$startInfo.CreateNoWindow = $true`,
+		`$startInfo.WindowStyle = [System.Diagnostics.ProcessWindowStyle]::Hidden`,
+		`$process = [System.Diagnostics.Process]::new()`,
+		`$process.StartInfo = $startInfo`,
+		`if (-not $process.Start()) { exit 1 }`,
 		`Set-Content -LiteralPath $pidPath -Value ([string]$process.Id) -Encoding ASCII`,
 		`$process.WaitForExit()`,
 		`Remove-Item -LiteralPath $pidPath -Force -ErrorAction SilentlyContinue`,
@@ -58,6 +63,9 @@ func TestBuildWindowsTaskScript(t *testing.T) {
 	}
 	if strings.Contains(script, `& 'C:\Program Files\cc-connect\cc-connect.exe'`) {
 		t.Fatalf("script must not launch the console binary directly:\n%s", script)
+	}
+	if strings.Contains(script, `Start-Process`) {
+		t.Fatalf("script must use ProcessStartInfo CreateNoWindow instead of Start-Process:\n%s", script)
 	}
 }
 
