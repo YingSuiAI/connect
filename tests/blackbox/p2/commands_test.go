@@ -21,8 +21,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/YingSuiAI/connect/tests/blackbox/helper"
-	bbplatform "github.com/YingSuiAI/connect/tests/blackbox/platform"
+	"github.com/YingSuiAI/direxio-connect/tests/blackbox/helper"
+	bbplatform "github.com/YingSuiAI/direxio-connect/tests/blackbox/platform"
 )
 
 const p2CmdTimeout = 30 * time.Second

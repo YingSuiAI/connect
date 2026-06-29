@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/YingSuiAI/connect/core"
+	"github.com/YingSuiAI/direxio-connect/core"
 )
 
 // listSessionsProbeTimeout bounds how long we wait for a one-shot

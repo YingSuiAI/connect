@@ -14,7 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/YingSuiAI/connect/core"
+	"github.com/YingSuiAI/direxio-connect/core"
 )
 
 // ── Wire types (mirrors reasonix/internal/serve/wire.go) ──────────

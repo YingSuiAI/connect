@@ -15,7 +15,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 
-	"github.com/YingSuiAI/connect/core"
+	"github.com/YingSuiAI/direxio-connect/core"
 )
 
 func init() {
@@ -549,7 +549,7 @@ func (a *Agent) SkillDirs() []string {
 
 // CompressCommand returns "" because Codex native slash commands (/compact, /clear)
 // are not reliably executed in exec/resume mode — they may be treated as plain text.
-// See: https://github.com/YingSuiAI/connect/issues/378
+// See: https://github.com/YingSuiAI/direxio-connect/issues/378
 func (a *Agent) CompressCommand() string { return "" }
 
 func codexSkillDirs(workDir, explicitCodexHome string) []string {

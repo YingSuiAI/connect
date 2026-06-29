@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/YingSuiAI/connect/core"
+	"github.com/YingSuiAI/direxio-connect/core"
 )
 
 // FakeAgentSession is a fake implementation of AgentSession for testing.

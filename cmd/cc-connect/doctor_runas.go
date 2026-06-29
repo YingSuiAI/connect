@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/YingSuiAI/connect/config"
-	"github.com/YingSuiAI/connect/core"
+	"github.com/YingSuiAI/direxio-connect/config"
+	"github.com/YingSuiAI/direxio-connect/core"
 )
 
 // runDoctor dispatches `direxio-connect doctor ...`. Today the only subcommand

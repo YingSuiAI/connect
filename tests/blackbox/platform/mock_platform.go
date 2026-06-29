@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/YingSuiAI/connect/core"
+	"github.com/YingSuiAI/direxio-connect/core"
 )
 
 // SentMessage captures a single outbound call from cc-connect to the platform.

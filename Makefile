@@ -1,5 +1,5 @@
 APP        := direxio-connect
-MODULE     := github.com/YingSuiAI/connect
+MODULE     := github.com/YingSuiAI/direxio-connect
 CMD        := ./cmd/cc-connect
 DIST       := dist
 

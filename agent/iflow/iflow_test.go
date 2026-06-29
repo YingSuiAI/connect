@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/YingSuiAI/connect/core"
+	"github.com/YingSuiAI/direxio-connect/core"
 )
 
 func TestNormalizeMode(t *testing.T) {

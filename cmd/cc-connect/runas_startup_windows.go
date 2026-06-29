@@ -5,7 +5,7 @@ package main
 import (
 	"context"
 
-	"github.com/YingSuiAI/connect/config"
+	"github.com/YingSuiAI/direxio-connect/config"
 )
 
 func runRunAsUserStartupChecks(_ context.Context, _ *config.Config) error {

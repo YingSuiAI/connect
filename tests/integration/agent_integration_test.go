@@ -13,12 +13,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/YingSuiAI/connect/agent/claudecode"
-	"github.com/YingSuiAI/connect/agent/codex"
-	"github.com/YingSuiAI/connect/agent/cursor"
-	"github.com/YingSuiAI/connect/agent/gemini"
-	"github.com/YingSuiAI/connect/agent/opencode"
-	"github.com/YingSuiAI/connect/core"
+	"github.com/YingSuiAI/direxio-connect/agent/claudecode"
+	"github.com/YingSuiAI/direxio-connect/agent/codex"
+	"github.com/YingSuiAI/direxio-connect/agent/cursor"
+	"github.com/YingSuiAI/direxio-connect/agent/gemini"
+	"github.com/YingSuiAI/direxio-connect/agent/opencode"
+	"github.com/YingSuiAI/direxio-connect/core"
 )
 
 // skipUnlessAgentReady skips the test when the agent CLI binary is not

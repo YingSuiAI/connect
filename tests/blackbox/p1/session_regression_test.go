@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/YingSuiAI/connect/tests/blackbox/helper"
+	"github.com/YingSuiAI/direxio-connect/tests/blackbox/helper"
 )
 
 // ── P1-30: 历史会话全部可见 ───────────────────────────────────────────────────

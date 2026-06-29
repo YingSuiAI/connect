@@ -11,7 +11,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/YingSuiAI/connect/core"
+	"github.com/YingSuiAI/direxio-connect/core"
 )
 
 // sessionFileData mirrors the unexported sessionSnapshot in core/session.go

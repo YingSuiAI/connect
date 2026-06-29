@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/YingSuiAI/connect/core"
+	"github.com/YingSuiAI/direxio-connect/core"
 )
 
 // newTestSession creates a cursorSession suitable for unit tests (no real CLI process).

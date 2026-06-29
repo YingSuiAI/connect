@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/YingSuiAI/connect/tests/blackbox/helper"
+	"github.com/YingSuiAI/direxio-connect/tests/blackbox/helper"
 )
 
 // ── P0-14: 工具调用 ───────────────────────────────────────────────────────────

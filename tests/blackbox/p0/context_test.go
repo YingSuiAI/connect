@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/YingSuiAI/connect/tests/blackbox/helper"
+	"github.com/YingSuiAI/direxio-connect/tests/blackbox/helper"
 )
 
 // ── P0-11: 上下文保持（最核心场景）──────────────────────────────────────────

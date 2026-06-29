@@ -3,7 +3,7 @@ package acp
 import (
 	"testing"
 
-	"github.com/YingSuiAI/connect/core"
+	"github.com/YingSuiAI/direxio-connect/core"
 )
 
 func TestNew_DisplayNameDefault(t *testing.T) {

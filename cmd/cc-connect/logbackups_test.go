@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/YingSuiAI/connect/daemon"
+	"github.com/YingSuiAI/direxio-connect/daemon"
 )
 
 func TestResolveLogMaxBackups_FlagWinsOverEnv(t *testing.T) {

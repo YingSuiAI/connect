@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/YingSuiAI/connect/core"
+	"github.com/YingSuiAI/direxio-connect/core"
 )
 
 func TestAgentUsageProbeEnv_AddsHostManagedFlagForCustomProvider(t *testing.T) {

@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	defaultPresetsURL  = "https://raw.githubusercontent.com/YingSuiAI/connect/main/provider-presets.json"
+	defaultPresetsURL  = "https://raw.githubusercontent.com/YingSuiAI/direxio-connect/main/provider-presets.json"
 	presetsCacheTTL    = 6 * time.Hour
 	presetsHTTPTimeout = 15 * time.Second
 )

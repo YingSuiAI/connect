@@ -11,7 +11,7 @@ Use `direxio-deployer`. It calls Direxio `agent.matrix_session.create`, writes t
 Via npm:
 
 ```bash
-npm install -g @direxio/connent
+npm install -g direxio-connent
 ```
 
 Via Homebrew:
@@ -23,7 +23,7 @@ brew install direxio-connect
 Download binary from GitHub Releases:
 
 ```bash
-curl -L -o direxio-connect.tar.gz https://github.com/YingSuiAI/connect/releases/latest/download/direxio-connect-v1.3.11-linux-amd64.tar.gz
+curl -L -o direxio-connect.tar.gz https://github.com/YingSuiAI/direxio-connect/releases/latest/download/direxio-connect-v1.3.11-linux-amd64.tar.gz
 tar xzf direxio-connect.tar.gz
 chmod +x direxio-connect-v1.3.11-linux-amd64
 sudo mv direxio-connect-v1.3.11-linux-amd64 /usr/local/bin/direxio-connect
@@ -32,7 +32,7 @@ sudo mv direxio-connect-v1.3.11-linux-amd64 /usr/local/bin/direxio-connect
 Build from source:
 
 ```bash
-git clone https://github.com/YingSuiAI/connect.git
+git clone https://github.com/YingSuiAI/direxio-connect.git
 cd cc-connect
 make build AGENTS=codex PLATFORMS_INCLUDE=matrix
 ```

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/YingSuiAI/connect/core"
+	"github.com/YingSuiAI/direxio-connect/core"
 )
 
 // sanitizeFileName mirrors the logic in geminiSession.Send for file name sanitization.

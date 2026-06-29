@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/YingSuiAI/connect/core"
+	"github.com/YingSuiAI/direxio-connect/core"
 )
 
 func TestAppServerSession_ApplyThreadRuntimeState(t *testing.T) {

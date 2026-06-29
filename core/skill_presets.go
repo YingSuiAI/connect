@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	defaultSkillPresetsURL  = "https://raw.githubusercontent.com/YingSuiAI/connect/main/skill-presets.json"
+	defaultSkillPresetsURL  = "https://raw.githubusercontent.com/YingSuiAI/direxio-connect/main/skill-presets.json"
 	skillPresetsCacheTTL    = 6 * time.Hour
 	skillPresetsHTTPTimeout = 15 * time.Second
 )

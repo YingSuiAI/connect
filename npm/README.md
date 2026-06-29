@@ -7,7 +7,7 @@ Chat with your AI dev assistant from anywhere.
 ## Install
 
 ```bash
-npm install -g @direxio/connent
+npm install -g direxio-connent
 ```
 
 ## Usage
@@ -29,4 +29,4 @@ direxio-connect daemon install --config /path/to/t1/config.toml --service-name t
 
 ## Documentation
 
-See full documentation at: https://github.com/YingSuiAI/connect
+See full documentation at: https://github.com/YingSuiAI/direxio-connect

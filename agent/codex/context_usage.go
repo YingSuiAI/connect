@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/YingSuiAI/connect/core"
+	"github.com/YingSuiAI/direxio-connect/core"
 )
 
 const codexRolloutTailBytes int64 = 1 << 20

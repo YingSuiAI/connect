@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/YingSuiAI/connect/config"
-	"github.com/YingSuiAI/connect/daemon"
+	"github.com/YingSuiAI/direxio-connect/config"
+	"github.com/YingSuiAI/direxio-connect/daemon"
 )
 
 func runDaemon(args []string) {

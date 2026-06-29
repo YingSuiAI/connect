@@ -14,7 +14,7 @@ const VERSION = `v${PACKAGE.version}`;
 const NAME = "direxio-connect";
 const LOG_PREFIX = "direxio-connect";
 
-const GITHUB_REPO = "YingSuiAI/connect";
+const GITHUB_REPO = "YingSuiAI/direxio-connect";
 
 const PLATFORM_MAP = {
   darwin: "darwin",

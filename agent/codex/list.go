@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/YingSuiAI/connect/core"
+	"github.com/YingSuiAI/direxio-connect/core"
 )
 
 // resolveCodexHomeDir returns the effective CODEX_HOME directory.

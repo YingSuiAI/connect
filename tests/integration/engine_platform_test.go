@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/YingSuiAI/connect/core"
-	"github.com/YingSuiAI/connect/tests/mocks"
-	"github.com/YingSuiAI/connect/tests/mocks/fake"
+	"github.com/YingSuiAI/direxio-connect/core"
+	"github.com/YingSuiAI/direxio-connect/tests/mocks"
+	"github.com/YingSuiAI/direxio-connect/tests/mocks/fake"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"

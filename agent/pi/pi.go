@@ -13,7 +13,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/YingSuiAI/connect/core"
+	"github.com/YingSuiAI/direxio-connect/core"
 )
 
 func init() {

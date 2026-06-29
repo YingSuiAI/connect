@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/YingSuiAI/connect/core"
+	"github.com/YingSuiAI/direxio-connect/core"
 
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"

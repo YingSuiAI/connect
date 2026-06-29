@@ -19,9 +19,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/YingSuiAI/connect/core"
-	"github.com/YingSuiAI/connect/tests/blackbox/helper"
-	bbplatform "github.com/YingSuiAI/connect/tests/blackbox/platform"
+	"github.com/YingSuiAI/direxio-connect/core"
+	"github.com/YingSuiAI/direxio-connect/tests/blackbox/helper"
+	bbplatform "github.com/YingSuiAI/direxio-connect/tests/blackbox/platform"
 )
 
 const cmdTimeout = 30 * time.Second // engine-handled commands are near-instant

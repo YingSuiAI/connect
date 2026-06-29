@@ -18,7 +18,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/YingSuiAI/connect/core"
+	"github.com/YingSuiAI/direxio-connect/core"
 )
 
 // codexSession manages a multi-turn Codex conversation.

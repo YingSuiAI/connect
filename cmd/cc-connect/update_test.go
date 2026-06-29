@@ -122,7 +122,7 @@ func TestSyncNpmPackageVersion_NormalizesVPrefix(t *testing.T) {
 	execPath := filepath.Join(binDir, "direxio-connect")
 
 	pkgJSON := filepath.Join(ccConnectDir, "package.json")
-	pkgData := `{"name": "@direxio/connent", "version": "v1.0.0"}`
+	pkgData := `{"name": "direxio-connent", "version": "v1.0.0"}`
 	if err := os.WriteFile(pkgJSON, []byte(pkgData), 0o644); err != nil {
 		t.Fatalf("write pkg.json: %v", err)
 	}
@@ -155,7 +155,7 @@ func TestSyncNpmPackageVersion_UpdatesWhenDifferent(t *testing.T) {
 	execPath := filepath.Join(binDir, "direxio-connect")
 
 	pkgJSON := filepath.Join(ccConnectDir, "package.json")
-	pkgData := `{"name": "@direxio/connent", "version": "v0.9.0"}`
+	pkgData := `{"name": "direxio-connent", "version": "v0.9.0"}`
 	if err := os.WriteFile(pkgJSON, []byte(pkgData), 0o644); err != nil {
 		t.Fatalf("write pkg.json: %v", err)
 	}

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/YingSuiAI/connect/core"
+	"github.com/YingSuiAI/direxio-connect/core"
 )
 
 func TestLSPWriter_WriteMessage(t *testing.T) {

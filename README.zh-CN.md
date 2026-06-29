@@ -9,7 +9,7 @@ Direxio 专用 Matrix 桥接器，用于把本地 coding agent 接入当前 Dire
 npm:
 
 ```bash
-npm install -g @direxio/connent
+npm install -g direxio-connent
 ```
 
 Homebrew:
@@ -21,7 +21,7 @@ brew install direxio-connect
 GitHub Releases:
 
 ```bash
-curl -L -o direxio-connect.tar.gz https://github.com/YingSuiAI/connect/releases/latest/download/direxio-connect-v1.3.11-linux-amd64.tar.gz
+curl -L -o direxio-connect.tar.gz https://github.com/YingSuiAI/direxio-connect/releases/latest/download/direxio-connect-v1.3.11-linux-amd64.tar.gz
 tar xzf direxio-connect.tar.gz
 chmod +x direxio-connect-v1.3.11-linux-amd64
 sudo mv direxio-connect-v1.3.11-linux-amd64 /usr/local/bin/direxio-connect
@@ -30,7 +30,7 @@ sudo mv direxio-connect-v1.3.11-linux-amd64 /usr/local/bin/direxio-connect
 源码构建:
 
 ```bash
-git clone https://github.com/YingSuiAI/connect.git
+git clone https://github.com/YingSuiAI/direxio-connect.git
 cd cc-connect
 make build AGENTS=codex PLATFORMS_INCLUDE=matrix
 ```

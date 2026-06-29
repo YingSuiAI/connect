@@ -2,4 +2,4 @@
 
 package main
 
-import _ "github.com/YingSuiAI/connect/agent/gemini"
+import _ "github.com/YingSuiAI/direxio-connect/agent/gemini"

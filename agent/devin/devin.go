@@ -27,8 +27,8 @@ package devin
 import (
 	"strings"
 
-	"github.com/YingSuiAI/connect/agent/acp"
-	"github.com/YingSuiAI/connect/core"
+	"github.com/YingSuiAI/direxio-connect/agent/acp"
+	"github.com/YingSuiAI/direxio-connect/core"
 )
 
 func init() {

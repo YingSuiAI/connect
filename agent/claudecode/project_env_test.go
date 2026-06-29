@@ -3,7 +3,7 @@ package claudecode
 import (
 	"testing"
 
-	"github.com/YingSuiAI/connect/core"
+	"github.com/YingSuiAI/direxio-connect/core"
 )
 
 func TestNew_ParsesProjectEnvFromOpts(t *testing.T) {

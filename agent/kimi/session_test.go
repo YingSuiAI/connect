@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/YingSuiAI/connect/core"
+	"github.com/YingSuiAI/direxio-connect/core"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

@@ -30,8 +30,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/YingSuiAI/connect/core"
-	"github.com/YingSuiAI/connect/tests/blackbox/helper"
+	"github.com/YingSuiAI/direxio-connect/core"
+	"github.com/YingSuiAI/direxio-connect/tests/blackbox/helper"
 )
 
 const cfgCmdTimeout = 30 * time.Second

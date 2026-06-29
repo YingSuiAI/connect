@@ -4,7 +4,7 @@ import (
 	"os/exec"
 	"testing"
 
-	"github.com/YingSuiAI/connect/agent/acp"
+	"github.com/YingSuiAI/direxio-connect/agent/acp"
 )
 
 // TestApplyDevinDefaults_FillsUnsetFields verifies the three Devin-

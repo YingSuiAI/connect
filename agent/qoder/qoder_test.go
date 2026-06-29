@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/YingSuiAI/connect/core"
+	"github.com/YingSuiAI/direxio-connect/core"
 )
 
 // TestAgent_StartSessionWorkDirRace exercises concurrent SetWorkDir + StartSession.

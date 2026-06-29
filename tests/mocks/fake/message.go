@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/YingSuiAI/connect/core"
+	"github.com/YingSuiAI/direxio-connect/core"
 )
 
 // TestMessage creates a basic test message with sensible defaults.

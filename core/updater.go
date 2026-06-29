@@ -20,8 +20,8 @@ import (
 )
 
 const (
-	githubReleasesAPI = "https://api.github.com/repos/YingSuiAI/connect/releases"
-	githubDownload    = "https://github.com/YingSuiAI/connect/releases/download"
+	githubReleasesAPI = "https://api.github.com/repos/YingSuiAI/direxio-connect/releases"
+	githubDownload    = "https://github.com/YingSuiAI/direxio-connect/releases/download"
 	updateBinaryName  = "direxio-connect"
 )
 

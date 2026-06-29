@@ -8,8 +8,8 @@ This repository is the Direxio-maintained fork of cc-connect. It is a local brid
 - Do not add back Feishu, WPS Xiezuo, DingTalk, Telegram, Slack, Discord, LINE, WeCom, Weibo, Weixin, QQ, QQ Bot, or other chat-platform adapters.
 - Keep support for local coding agent backends broad and neutral. Do not make Codex the only first-class backend; Codex, Claude Code, Gemini, Cursor, Copilot, Qoder, OpenCode, and similar local agent runtimes should be treated evenly where the architecture already supports them.
 - The production binary name is `direxio-connect`.
-- The npm package name is `@direxio/connent`.
-- The GitHub repository and release source is `https://github.com/YingSuiAI/connect`.
+- The npm package name is `direxio-connent`.
+- The GitHub repository and release source is `https://github.com/YingSuiAI/direxio-connect`.
 
 ## Direxio Matrix Contract
 
@@ -71,12 +71,12 @@ auto_verify = false
 ## Packaging And Release
 
 - Version bumps must keep these files in sync: `Makefile`, `npm/package.json`, README/INSTALL references, and release asset names.
-- Release assets must use the `direxio-connect` name and the `YingSuiAI/connect` repository.
+- Release assets must use the `direxio-connect` name and the `YingSuiAI/direxio-connect` repository.
 - The npm installer must download from GitHub Releases and should tolerate transient network failures with retries.
 - Before claiming npm install works, verify a real install of the just-published package, for example:
 
 ```powershell
-npm install --prefix <temp-dir> @direxio/connent@<version>
+npm install --prefix <temp-dir> direxio-connent@<version>
 <temp-dir>\node_modules\.bin\direxio-connect.cmd --version
 ```
 
@@ -86,8 +86,8 @@ npm install --prefix <temp-dir> @direxio/connent@<version>
 make build AGENTS=codex PLATFORMS_INCLUDE=matrix
 node --check npm/install.js
 npm pack --dry-run --prefix npm
-gh release view v<version> --repo YingSuiAI/connect
-npm view @direxio/connent@<version> version
+gh release view v<version> --repo YingSuiAI/direxio-connect
+npm view direxio-connent@<version> version
 ```
 
 ## Development Workflow
@@ -123,4 +123,4 @@ git diff --check
 - Keep README and INSTALL focused on Direxio operation, not the removed upstream multi-platform product.
 - Do not document unsupported chat platforms.
 - When changing public config, install, release, or command behavior, update README/INSTALL/config examples and this file together.
-- Keep the package spelling `@direxio/connent` unless the package is intentionally renamed across npm, docs, release tooling, and deployer integration.
+- Keep the package spelling `direxio-connent` unless the package is intentionally renamed across npm, docs, release tooling, and deployer integration.

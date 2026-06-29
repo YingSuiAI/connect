@@ -4,7 +4,7 @@ package mocks
 import (
 	"context"
 
-	"github.com/YingSuiAI/connect/core"
+	"github.com/YingSuiAI/direxio-connect/core"
 	"github.com/stretchr/testify/mock"
 )
 

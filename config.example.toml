@@ -1,5 +1,5 @@
 # direxio-connect configuration
-# Docs: https://github.com/YingSuiAI/connect
+# Docs: https://github.com/YingSuiAI/direxio-connect
 #
 # This distribution is Direxio-only. The only supported platform type is
 # "matrix", and the Matrix account should be the local @agent:<server> user

@@ -16,10 +16,10 @@ import (
 	"syscall"
 	"time"
 
-	ccconnect "github.com/YingSuiAI/connect"
-	"github.com/YingSuiAI/connect/config"
-	"github.com/YingSuiAI/connect/core"
-	"github.com/YingSuiAI/connect/daemon"
+	ccconnect "github.com/YingSuiAI/direxio-connect"
+	"github.com/YingSuiAI/direxio-connect/config"
+	"github.com/YingSuiAI/direxio-connect/core"
+	"github.com/YingSuiAI/direxio-connect/daemon"
 	// Agent and platform imports are in separate plugin_*.go files
 	// controlled by build tags. See Makefile for selective compilation.
 )
@@ -1410,7 +1410,7 @@ func bootstrapConfig(path string) error {
 	}
 
 	const tmpl = `# direxio-connect configuration
-# Docs: https://github.com/YingSuiAI/connect
+# Docs: https://github.com/YingSuiAI/direxio-connect
 
 [log]
 level = "info"
@@ -1461,8 +1461,8 @@ func printUsage() {
   Supports: Claude Code, Codex, Cursor, Gemini CLI, Qoder CLI, OpenCode
   Platform: Direxio Matrix
 
-  GitHub:  https://github.com/YingSuiAI/connect
-  Docs:    https://github.com/YingSuiAI/connect/blob/main/INSTALL.md
+  GitHub:  https://github.com/YingSuiAI/direxio-connect
+  Docs:    https://github.com/YingSuiAI/direxio-connect/blob/main/INSTALL.md
 
 Usage:
   direxio-connect [flags]

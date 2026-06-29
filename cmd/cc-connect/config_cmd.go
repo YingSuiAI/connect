@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	ccconnect "github.com/YingSuiAI/connect"
-	"github.com/YingSuiAI/connect/config"
+	ccconnect "github.com/YingSuiAI/direxio-connect"
+	"github.com/YingSuiAI/direxio-connect/config"
 )
 
 func runConfig(args []string) {

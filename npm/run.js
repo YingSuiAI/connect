@@ -65,7 +65,7 @@ if (needsReinstall()) {
       cwd: __dirname,
     });
   } catch {
-    console.error("[direxio-connect] Auto-install failed. Run manually: npm uninstall -g @direxio/connent && npm install -g @direxio/connent");
+    console.error("[direxio-connect] Auto-install failed. Run manually: npm uninstall -g direxio-connent && npm install -g direxio-connent");
     process.exit(1);
   }
 }

@@ -7,7 +7,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/YingSuiAI/connect/core"
+	"github.com/YingSuiAI/direxio-connect/core"
 )
 
 func TestNew_ParsesRunAsUserAndRunAsEnv(t *testing.T) {

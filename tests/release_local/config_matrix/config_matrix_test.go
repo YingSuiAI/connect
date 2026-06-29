@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/YingSuiAI/connect/config"
+	"github.com/YingSuiAI/direxio-connect/config"
 )
 
 func writeConfig(t *testing.T, body string) string {

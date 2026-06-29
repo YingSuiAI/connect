@@ -9,7 +9,7 @@ This fork keeps the cc-connect agent runtime and Matrix transport, and removes t
 Via npm:
 
 ```bash
-npm install -g @direxio/connent
+npm install -g direxio-connent
 ```
 
 Via Homebrew:
@@ -21,7 +21,7 @@ brew install direxio-connect
 From GitHub Releases:
 
 ```bash
-curl -L -o direxio-connect.tar.gz https://github.com/YingSuiAI/connect/releases/latest/download/direxio-connect-v1.3.11-linux-amd64.tar.gz
+curl -L -o direxio-connect.tar.gz https://github.com/YingSuiAI/direxio-connect/releases/latest/download/direxio-connect-v1.3.11-linux-amd64.tar.gz
 tar xzf direxio-connect.tar.gz
 chmod +x direxio-connect
 sudo mv direxio-connect /usr/local/bin/direxio-connect
@@ -30,7 +30,7 @@ sudo mv direxio-connect /usr/local/bin/direxio-connect
 Build from source:
 
 ```bash
-git clone https://github.com/YingSuiAI/connect.git
+git clone https://github.com/YingSuiAI/direxio-connect.git
 cd connect
 make build AGENTS=codex PLATFORMS_INCLUDE=matrix
 ```

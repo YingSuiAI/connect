@@ -19,7 +19,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/YingSuiAI/connect/core"
+	"github.com/YingSuiAI/direxio-connect/core"
 )
 
 // claudeSession manages a long-running Claude Code process using

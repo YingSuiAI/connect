@@ -10,8 +10,8 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/YingSuiAI/connect/config"
-	"github.com/YingSuiAI/connect/core"
+	"github.com/YingSuiAI/direxio-connect/config"
+	"github.com/YingSuiAI/direxio-connect/core"
 	_ "modernc.org/sqlite"
 )
 
