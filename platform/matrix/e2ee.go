@@ -226,7 +226,26 @@ func (p *Platform) tryInitCrypto(ctx context.Context, client *mautrix.Client, pi
 }
 
 func newCryptoDatabase(dbPath string) (*dbutil.Database, error) {
-	u := url.URL{Scheme: "file", Path: dbPath}
+	return dbutil.NewWithDialect(cryptoDatabaseURI(dbPath), "sqlite")
+}
+
+func cryptoDatabaseURI(dbPath string) string {
+	path := strings.ReplaceAll(dbPath, "\\", "/")
+	u := url.URL{Scheme: "file"}
+	if strings.HasPrefix(path, "//") {
+		hostPath := strings.TrimPrefix(path, "//")
+		if host, rest, ok := strings.Cut(hostPath, "/"); ok && host != "" {
+			u.Host = host
+			u.Path = "/" + rest
+		} else {
+			u.Path = path
+		}
+	} else if len(path) >= 2 && path[1] == ':' {
+		path = "/" + path
+		u.Path = path
+	} else {
+		u.Path = path
+	}
 	q := u.Query()
 	q.Set("_txlock", "immediate")
 	q.Add("_pragma", "foreign_keys(1)")
@@ -234,7 +253,7 @@ func newCryptoDatabase(dbPath string) (*dbutil.Database, error) {
 	q.Add("_pragma", "synchronous(NORMAL)")
 	q.Add("_pragma", "busy_timeout(5000)")
 	u.RawQuery = q.Encode()
-	return dbutil.NewWithDialect(u.String(), "sqlite")
+	return u.String()
 }
 
 func (p *Platform) cleanupFailedCrypto(client *mautrix.Client, ch *cryptohelper.CryptoHelper) {

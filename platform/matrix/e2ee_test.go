@@ -36,3 +36,27 @@ func TestTryInitCryptoUsesPureGoSQLite(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = helper.Close() })
 }
+
+func TestCryptoDatabaseURIWindowsPath(t *testing.T) {
+	got := cryptoDatabaseURI(`C:\Users\agent\AppData\Local\Temp\crypto.db`)
+	if !strings.HasPrefix(got, "file:///C:/Users/agent/AppData/Local/Temp/crypto.db?") {
+		t.Fatalf("cryptoDatabaseURI() = %q", got)
+	}
+	if strings.Contains(got, `%5C`) {
+		t.Fatalf("cryptoDatabaseURI() must not escape Windows separators: %q", got)
+	}
+}
+
+func TestCryptoDatabaseURIPosixPath(t *testing.T) {
+	got := cryptoDatabaseURI("/var/lib/direxio/crypto.db")
+	if !strings.HasPrefix(got, "file:///var/lib/direxio/crypto.db?") {
+		t.Fatalf("cryptoDatabaseURI() = %q", got)
+	}
+}
+
+func TestCryptoDatabaseURIUNCPath(t *testing.T) {
+	got := cryptoDatabaseURI(`\\fileserver\direxio\crypto.db`)
+	if !strings.HasPrefix(got, "file://fileserver/direxio/crypto.db?") {
+		t.Fatalf("cryptoDatabaseURI() = %q", got)
+	}
+}
