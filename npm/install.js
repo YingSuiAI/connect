@@ -13,6 +13,7 @@ const PACKAGE = require("./package.json");
 const VERSION = `v${PACKAGE.version}`;
 const NAME = "direxio-connect";
 const LOG_PREFIX = "direxio-connect";
+const LOCAL_BINARY_ENV = "DIREXIO_CONNECT_LOCAL_BINARY";
 
 const GITHUB_REPO = "YingSuiAI/direxio-connect";
 
@@ -170,6 +171,18 @@ async function main() {
 
   const binaryName = platform === "windows" ? `${NAME}.exe` : NAME;
   const binaryPath = path.join(binDir, binaryName);
+  const localBinary = (process.env[LOCAL_BINARY_ENV] || "").trim();
+  if (localBinary) {
+    if (!fs.existsSync(localBinary)) {
+      throw new Error(`[${LOG_PREFIX}] ${LOCAL_BINARY_ENV} does not exist: ${localBinary}`);
+    }
+    fs.copyFileSync(localBinary, binaryPath);
+    if (platform !== "windows") {
+      fs.chmodSync(binaryPath, 0o755);
+    }
+    console.log(`[${LOG_PREFIX}] Installed local binary from ${localBinary}`);
+    return;
+  }
 
   if (fs.existsSync(binaryPath)) {
     try {

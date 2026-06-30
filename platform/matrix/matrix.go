@@ -2,6 +2,7 @@ package matrix
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"github.com/YingSuiAI/direxio-connect/core"
+	"github.com/gorilla/websocket"
 
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
@@ -27,6 +29,22 @@ func init() {
 type replyContext struct {
 	roomID    id.RoomID
 	messageID id.EventID
+}
+
+type agentStreamPreviewHandle struct {
+	roomID   id.RoomID
+	streamID string
+
+	mu       sync.Mutex
+	lastBody string
+}
+
+type agentGatewayMessageContent struct {
+	*event.MessageEventContent
+
+	AgentGateway  bool           `json:"io.direxio.agent_gateway,omitempty"`
+	GatewaySource string         `json:"io.direxio.gateway_source,omitempty"`
+	AgentStream   map[string]any `json:"io.direxio.agent_stream,omitempty"`
 }
 
 type Platform struct {
@@ -55,13 +73,23 @@ type Platform struct {
 	httpClient           *http.Client
 	cryptoHelper         any //nolint:unused // *cryptohelper.CryptoHelper when built with goolm tag
 	crossSigningPassword string
+
+	p2pBaseURL    string
+	p2pAgentToken string
+	p2pMu         sync.Mutex
+	p2pWriteMu    sync.Mutex
+	p2pConn       *websocket.Conn
+	p2pStreamSeq  int64
 }
 
 const (
-	agentRoomStatusEventType = "io.direxio.agent.status"
-	initialBackoff           = 2 * time.Second
-	maxBackoff               = 60 * time.Second
-	stableWindow             = 10 * time.Second
+	agentRoomStatusEventType  = "io.direxio.agent.status"
+	agentRoomMessageEventType = "agent_room.message"
+	agentGatewaySource        = "direxio-connect"
+	realtimeWSTicketAction    = "realtime.ws_ticket.create"
+	initialBackoff            = 2 * time.Second
+	maxBackoff                = 60 * time.Second
+	stableWindow              = 10 * time.Second
 )
 
 var agentRoomStatusMatrixEventType = event.Type{Type: agentRoomStatusEventType, Class: event.StateEventType}
@@ -107,6 +135,31 @@ func New(opts map[string]any) (core.Platform, error) {
 	if env := os.Getenv("MATRIX_CROSS_SIGNING_PASSWORD"); env != "" {
 		crossSigningPassword = env
 	}
+	p2pBaseURL, _ := opts["p2p_base_url"].(string)
+	if p2pBaseURL == "" {
+		p2pBaseURL, _ = opts["direxio_p2p_base_url"].(string)
+	}
+	p2pAgentToken, _ := opts["agent_token"].(string)
+	if p2pAgentToken == "" {
+		p2pAgentToken, _ = opts["p2p_agent_token"].(string)
+	}
+	if env := os.Getenv("DIREXIO_P2P_BASE_URL"); env != "" {
+		p2pBaseURL = env
+	}
+	if env := os.Getenv("DIREXIO_AGENT_TOKEN"); env != "" {
+		p2pAgentToken = env
+	}
+	if p2pAgentToken != "" && p2pBaseURL == "" {
+		p2pBaseURL = deriveP2PBaseURL(homeserver)
+	}
+	p2pBaseURL = strings.TrimRight(strings.TrimSpace(p2pBaseURL), "/")
+	p2pAgentToken = strings.TrimSpace(p2pAgentToken)
+	if p2pBaseURL != "" {
+		u, err := url.Parse(p2pBaseURL)
+		if err != nil || u.Scheme == "" || u.Host == "" {
+			return nil, fmt.Errorf("matrix: invalid p2p_base_url %q", p2pBaseURL)
+		}
+	}
 
 	httpClient := &http.Client{Timeout: 120 * time.Second}
 	if proxyURL != "" {
@@ -132,6 +185,8 @@ func New(opts map[string]any) (core.Platform, error) {
 		crossSigningPassword:  crossSigningPassword,
 		httpClient:            httpClient,
 		dedup:                 core.MessageDedup{},
+		p2pBaseURL:            p2pBaseURL,
+		p2pAgentToken:         p2pAgentToken,
 	}, nil
 }
 
@@ -234,6 +289,11 @@ func (p *Platform) runConnection(ctx context.Context) error {
 
 	if err := p.publishAgentRoomStatus(ctx, true); err != nil {
 		slog.Warn("matrix: publish agent online status failed", "error", core.RedactToken(err.Error(), p.accessToken))
+	}
+	wsCtx, cancelWS := context.WithCancel(ctx)
+	defer cancelWS()
+	if p.direxioWSConfigured() {
+		go p.runDirexioAgentWSLoop(wsCtx)
 	}
 
 	slog.Info("matrix: connected", "user_id", selfUserID)
@@ -443,7 +503,7 @@ func (p *Platform) Reply(ctx context.Context, rctx any, content string) error {
 		parsed.RelatesTo.SetReplyTo(rc.messageID)
 	}
 
-	return p.sendRoomEvent(ctx, rc.roomID, event.EventMessage, &parsed)
+	return p.sendRoomEvent(ctx, rc.roomID, event.EventMessage, p.decorateOutgoingAgentMessage(rc, &parsed, content))
 }
 
 func (p *Platform) Send(ctx context.Context, rctx any, content string) error {
@@ -455,7 +515,7 @@ func (p *Platform) Send(ctx context.Context, rctx any, content string) error {
 	parsed := format.RenderMarkdown(content, true, false)
 	parsed.Body = content
 
-	return p.sendRoomEvent(ctx, rc.roomID, event.EventMessage, &parsed)
+	return p.sendRoomEvent(ctx, rc.roomID, event.EventMessage, p.decorateOutgoingAgentMessage(rc, &parsed, content))
 }
 
 func (p *Platform) Stop() error {
@@ -479,10 +539,14 @@ func (p *Platform) Stop() error {
 	if cancel != nil {
 		cancel()
 	}
+	p.closeDirexioWSConn()
 	return nil
 }
 
 func (p *Platform) publishAgentRoomStatus(ctx context.Context, online bool) error {
+	if p.direxioWSConfigured() {
+		return nil
+	}
 	p.mu.RLock()
 	client := p.client
 	roomID := p.allowedRoomID
@@ -502,6 +566,438 @@ func (p *Platform) publishAgentRoomStatus(ctx context.Context, online bool) erro
 		return fmt.Errorf("send %s state event: %w", agentRoomStatusEventType, err)
 	}
 	return nil
+}
+
+func deriveP2PBaseURL(homeserver string) string {
+	u, err := url.Parse(strings.TrimSpace(homeserver))
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	u.Path = strings.TrimRight(u.Path, "/") + "/_p2p"
+	u.RawQuery = ""
+	u.Fragment = ""
+	return u.String()
+}
+
+func (p *Platform) direxioWSConfigured() bool {
+	return strings.TrimSpace(p.p2pBaseURL) != "" && strings.TrimSpace(p.p2pAgentToken) != ""
+}
+
+func (p *Platform) runDirexioAgentWSLoop(ctx context.Context) {
+	backoff := initialBackoff
+	for {
+		if ctx.Err() != nil || p.isStopping() {
+			return
+		}
+		startedAt := time.Now()
+		err := p.runDirexioAgentWSOnce(ctx)
+		if ctx.Err() != nil || p.isStopping() {
+			return
+		}
+		wait := backoff
+		if time.Since(startedAt) >= stableWindow {
+			wait = initialBackoff
+			backoff = initialBackoff
+		} else if backoff < maxBackoff {
+			backoff *= 2
+			if backoff > maxBackoff {
+				backoff = maxBackoff
+			}
+		}
+		if err != nil {
+			slog.Warn("matrix: direxio agent websocket disconnected, retrying", "error", core.RedactToken(err.Error(), p.p2pAgentToken), "backoff", wait)
+		}
+		timer := time.NewTimer(wait)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+	}
+}
+
+func (p *Platform) runDirexioAgentWSOnce(ctx context.Context) error {
+	ticket, err := p.createDirexioWSTicket(ctx)
+	if err != nil {
+		return err
+	}
+	wsURL, err := p.direxioWSURL(ticket)
+	if err != nil {
+		return err
+	}
+	dialer := websocket.Dialer{
+		HandshakeTimeout: 15 * time.Second,
+		Proxy:            http.ProxyFromEnvironment,
+	}
+	if p.proxyURL != "" {
+		if proxy, err := url.Parse(p.proxyURL); err == nil {
+			dialer.Proxy = http.ProxyURL(proxy)
+		}
+	}
+	conn, _, err := dialer.DialContext(ctx, wsURL, nil)
+	if err != nil {
+		return fmt.Errorf("matrix: connect direxio websocket: %w", err)
+	}
+	p.setDirexioWSConn(conn)
+	defer func() {
+		p.clearDirexioWSConn(conn)
+		_ = conn.Close()
+	}()
+
+	closeDone := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = conn.Close()
+		case <-closeDone:
+		}
+	}()
+	defer close(closeDone)
+
+	if err := p.sendDirexioWSFrame(ctx, map[string]any{"type": "client.hello"}); err != nil {
+		return err
+	}
+	pingCtx, cancelPing := context.WithCancel(ctx)
+	defer cancelPing()
+	go p.runDirexioWSPing(pingCtx)
+
+	for {
+		var frame map[string]any
+		if err := conn.ReadJSON(&frame); err != nil {
+			return fmt.Errorf("matrix: read direxio websocket: %w", err)
+		}
+		if err := p.handleDirexioWSFrame(ctx, frame); err != nil {
+			return err
+		}
+	}
+}
+
+func (p *Platform) createDirexioWSTicket(ctx context.Context) (string, error) {
+	commandURL, err := p.direxioCommandURL()
+	if err != nil {
+		return "", err
+	}
+	body := strings.NewReader(`{"action":"` + realtimeWSTicketAction + `","params":{}}`)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, commandURL, body)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+p.p2pAgentToken)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("matrix: create direxio websocket ticket: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return "", fmt.Errorf("matrix: create direxio websocket ticket: status %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
+	}
+	var decoded struct {
+		Ticket string `json:"ticket"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&decoded); err != nil {
+		return "", fmt.Errorf("matrix: decode direxio websocket ticket: %w", err)
+	}
+	if strings.TrimSpace(decoded.Ticket) == "" {
+		return "", fmt.Errorf("matrix: direxio websocket ticket response missing ticket")
+	}
+	return decoded.Ticket, nil
+}
+
+func (p *Platform) direxioCommandURL() (string, error) {
+	u, err := url.Parse(strings.TrimRight(p.p2pBaseURL, "/"))
+	if err != nil {
+		return "", fmt.Errorf("matrix: invalid p2p_base_url %q: %w", p.p2pBaseURL, err)
+	}
+	if !strings.HasSuffix(strings.TrimRight(u.Path, "/"), "/command") {
+		u.Path = strings.TrimRight(u.Path, "/") + "/command"
+	}
+	u.RawQuery = ""
+	u.Fragment = ""
+	return u.String(), nil
+}
+
+func (p *Platform) direxioWSURL(ticket string) (string, error) {
+	u, err := url.Parse(strings.TrimRight(p.p2pBaseURL, "/"))
+	if err != nil {
+		return "", fmt.Errorf("matrix: invalid p2p_base_url %q: %w", p.p2pBaseURL, err)
+	}
+	switch u.Scheme {
+	case "http":
+		u.Scheme = "ws"
+	case "https":
+		u.Scheme = "wss"
+	case "ws", "wss":
+	default:
+		return "", fmt.Errorf("matrix: unsupported p2p_base_url scheme %q", u.Scheme)
+	}
+	if !strings.HasSuffix(strings.TrimRight(u.Path, "/"), "/ws") {
+		u.Path = strings.TrimRight(u.Path, "/") + "/ws"
+	}
+	q := u.Query()
+	q.Set("ticket", ticket)
+	u.RawQuery = q.Encode()
+	u.Fragment = ""
+	return u.String(), nil
+}
+
+func (p *Platform) runDirexioWSPing(ctx context.Context) {
+	ticker := time.NewTicker(25 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			_ = p.sendDirexioWSFrame(ctx, map[string]any{"type": "client.ping"})
+		}
+	}
+}
+
+func (p *Platform) handleDirexioWSFrame(ctx context.Context, frame map[string]any) error {
+	switch strings.TrimSpace(stringFromAny(frame["type"])) {
+	case "server.ready":
+		slog.Info("matrix: direxio agent websocket connected", "role", stringFromAny(frame["role"]))
+		return nil
+	case "server.event":
+		return p.handleDirexioAgentRoomEvent(ctx, frame)
+	case "server.cursor_reset":
+		return nil
+	case "server.error":
+		msg := strings.TrimSpace(stringFromAny(frame["error"]))
+		if msg == "" {
+			msg = "server.error"
+		}
+		return fmt.Errorf("matrix: direxio websocket error: %s", msg)
+	default:
+		return nil
+	}
+}
+
+func (p *Platform) handleDirexioAgentRoomEvent(ctx context.Context, frame map[string]any) error {
+	rawEvent, ok := mapFromAny(frame["event"])
+	if !ok {
+		return nil
+	}
+	if strings.TrimSpace(stringFromAny(rawEvent["type"])) != agentRoomMessageEventType {
+		return nil
+	}
+	payload, _ := mapFromAny(rawEvent["payload"])
+	roomIDStr := firstStringFromAny(payload["room_id"], rawEvent["room_id"])
+	roomID := id.RoomID(roomIDStr)
+	if !p.roomAllowed(roomID) {
+		return nil
+	}
+	eventIDStr := firstStringFromAny(payload["event_id"], rawEvent["event_id"])
+	if eventIDStr == "" {
+		eventIDStr = fmt.Sprintf("ws-agent-room-%d", int64FromAny(rawEvent["seq"]))
+	}
+	senderStr := strings.TrimSpace(stringFromAny(payload["sender_mxid"]))
+	if senderStr == "" {
+		return nil
+	}
+	selfID := p.getSelfUserID()
+	if selfID == "" {
+		selfID = id.UserID(p.userID)
+	}
+	if id.UserID(senderStr) == selfID {
+		return nil
+	}
+	if !core.AllowList(p.allowFrom, senderStr) {
+		slog.Debug("matrix: direxio websocket message from unauthorized user", "user", senderStr)
+		return nil
+	}
+	if originTS := int64FromAny(payload["origin_server_ts"]); originTS > 0 && core.IsOldMessage(time.UnixMilli(originTS)) {
+		slog.Debug("matrix: ignoring old direxio websocket message", "event_id", eventIDStr, "time", time.UnixMilli(originTS))
+		return nil
+	}
+	msgType := strings.TrimSpace(firstStringFromAny(payload["msgtype"], "m.text"))
+	switch event.MessageType(msgType) {
+	case event.MsgText, event.MsgNotice, event.MsgEmote:
+	default:
+		return nil
+	}
+	if p.dedup.IsDuplicate(eventIDStr) {
+		return nil
+	}
+	rawBody := stringFromAny(payload["body"])
+	body := stripBotMention(rawBody, selfID)
+	isDM := p.isDMRoom(ctx, roomID)
+	if !isDM && !p.groupReplyAll {
+		if !strings.Contains(rawBody, selfID.String()) {
+			return nil
+		}
+	}
+	p.dispatch(&core.Message{
+		SessionKey: p.buildSessionKey(roomID, id.UserID(senderStr)),
+		Platform:   "matrix",
+		UserID:     senderStr,
+		UserName:   displayName(id.UserID(senderStr)),
+		Content:    body,
+		MessageID:  eventIDStr,
+		ChannelKey: roomIDStr,
+		ReplyCtx: replyContext{
+			roomID:    roomID,
+			messageID: id.EventID(eventIDStr),
+		},
+	})
+	return nil
+}
+
+func (p *Platform) setDirexioWSConn(conn *websocket.Conn) {
+	p.p2pMu.Lock()
+	old := p.p2pConn
+	p.p2pConn = conn
+	p.p2pMu.Unlock()
+	if old != nil && old != conn {
+		_ = old.Close()
+	}
+}
+
+func (p *Platform) clearDirexioWSConn(conn *websocket.Conn) {
+	p.p2pMu.Lock()
+	if p.p2pConn == conn {
+		p.p2pConn = nil
+	}
+	p.p2pMu.Unlock()
+}
+
+func (p *Platform) closeDirexioWSConn() {
+	p.p2pMu.Lock()
+	conn := p.p2pConn
+	p.p2pConn = nil
+	p.p2pMu.Unlock()
+	if conn != nil {
+		_ = conn.Close()
+	}
+}
+
+func (p *Platform) sendDirexioAgentStream(ctx context.Context, roomID id.RoomID, streamID, body, finalBody string, done bool) error {
+	frame := map[string]any{
+		"type":      "client.agent_stream",
+		"room_id":   roomID.String(),
+		"stream_id": streamID,
+		"seq":       p.nextDirexioStreamSeq(),
+		"replace":   true,
+	}
+	if body != "" {
+		frame["body"] = body
+	}
+	if finalBody != "" {
+		frame["final_body"] = finalBody
+	}
+	if done {
+		frame["done"] = true
+	}
+	return p.sendDirexioWSFrame(ctx, frame)
+}
+
+func (p *Platform) sendDirexioWSFrame(ctx context.Context, frame map[string]any) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	p.p2pMu.Lock()
+	conn := p.p2pConn
+	p.p2pMu.Unlock()
+	if conn == nil {
+		return fmt.Errorf("matrix: direxio websocket not connected")
+	}
+	p.p2pWriteMu.Lock()
+	defer p.p2pWriteMu.Unlock()
+	_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+	err := conn.WriteJSON(frame)
+	_ = conn.SetWriteDeadline(time.Time{})
+	if err != nil {
+		return fmt.Errorf("matrix: write direxio websocket: %w", err)
+	}
+	return nil
+}
+
+func (p *Platform) nextDirexioStreamSeq() int64 {
+	p.p2pMu.Lock()
+	defer p.p2pMu.Unlock()
+	p.p2pStreamSeq++
+	return p.p2pStreamSeq
+}
+
+func (p *Platform) decorateOutgoingAgentMessage(rc replyContext, content *event.MessageEventContent, finalBody string) any {
+	if !p.direxioWSConfigured() || p.allowedRoomID == "" || rc.roomID != p.allowedRoomID {
+		return content
+	}
+	streamID := strings.TrimSpace(rc.messageID.String())
+	if streamID == "" {
+		streamID = fmt.Sprintf("matrix-final-%d", time.Now().UnixNano())
+	}
+	return &agentGatewayMessageContent{
+		MessageEventContent: content,
+		AgentGateway:        true,
+		GatewaySource:       agentGatewaySource,
+		AgentStream: map[string]any{
+			"stream_id":  streamID,
+			"seq":        p.nextDirexioStreamSeq(),
+			"final_body": finalBody,
+			"done":       true,
+			"replace":    true,
+		},
+	}
+}
+
+func mapFromAny(raw any) (map[string]any, bool) {
+	if raw == nil {
+		return nil, false
+	}
+	if m, ok := raw.(map[string]any); ok {
+		return m, true
+	}
+	return nil, false
+}
+
+func firstStringFromAny(values ...any) string {
+	for _, value := range values {
+		if s := strings.TrimSpace(stringFromAny(value)); s != "" {
+			return s
+		}
+	}
+	return ""
+}
+
+func stringFromAny(value any) string {
+	switch v := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return v
+	case fmt.Stringer:
+		return v.String()
+	case json.Number:
+		return v.String()
+	default:
+		return fmt.Sprint(v)
+	}
+}
+
+func int64FromAny(value any) int64 {
+	switch v := value.(type) {
+	case int:
+		return int64(v)
+	case int64:
+		return v
+	case float64:
+		return int64(v)
+	case float32:
+		return int64(v)
+	case json.Number:
+		n, _ := v.Int64()
+		return n
+	case string:
+		var n int64
+		_, _ = fmt.Sscan(strings.TrimSpace(v), &n)
+		return n
+	default:
+		return 0
+	}
 }
 
 // --- Optional interfaces ---
@@ -642,6 +1138,12 @@ func (p *Platform) StartTyping(ctx context.Context, rctx any) (stop func()) {
 }
 
 func (p *Platform) UpdateMessage(ctx context.Context, previewHandle any, content string) error {
+	if handle, ok := previewHandle.(*agentStreamPreviewHandle); ok {
+		handle.mu.Lock()
+		handle.lastBody = content
+		handle.mu.Unlock()
+		return p.sendDirexioAgentStream(ctx, handle.roomID, handle.streamID, content, "", false)
+	}
 	rc, ok := previewHandle.(replyContext)
 	if !ok {
 		return fmt.Errorf("matrix: invalid preview handle type %T", previewHandle)
@@ -662,6 +1164,47 @@ func (p *Platform) UpdateMessage(ctx context.Context, previewHandle any, content
 	parsed.Body = "* " + content
 
 	return p.sendRoomEvent(ctx, rc.roomID, event.EventMessage, &parsed)
+}
+
+func (p *Platform) SendPreviewStart(ctx context.Context, rctx any, content string) (any, error) {
+	rc, ok := rctx.(replyContext)
+	if !ok {
+		return nil, fmt.Errorf("matrix: invalid reply context type %T", rctx)
+	}
+	if !p.direxioWSConfigured() {
+		if err := p.Send(ctx, rctx, content); err != nil {
+			return nil, err
+		}
+		return rc, nil
+	}
+	streamID := strings.TrimSpace(rc.messageID.String())
+	if streamID == "" {
+		streamID = fmt.Sprintf("matrix-preview-%d", time.Now().UnixNano())
+	}
+	handle := &agentStreamPreviewHandle{
+		roomID:   rc.roomID,
+		streamID: streamID,
+		lastBody: content,
+	}
+	if err := p.sendDirexioAgentStream(ctx, rc.roomID, streamID, content, "", false); err != nil {
+		return nil, err
+	}
+	return handle, nil
+}
+
+func (p *Platform) DeletePreviewMessage(ctx context.Context, previewHandle any) error {
+	handle, ok := previewHandle.(*agentStreamPreviewHandle)
+	if !ok {
+		return nil
+	}
+	handle.mu.Lock()
+	finalBody := handle.lastBody
+	handle.mu.Unlock()
+	return p.sendDirexioAgentStream(ctx, handle.roomID, handle.streamID, "", finalBody, true)
+}
+
+func (p *Platform) KeepPreviewOnFinish() bool {
+	return !p.direxioWSConfigured()
 }
 
 func (p *Platform) ReconstructReplyCtx(sessionKey string) (any, error) {
@@ -933,5 +1476,8 @@ var (
 	_ core.ImageSender               = (*Platform)(nil)
 	_ core.FileSender                = (*Platform)(nil)
 	_ core.MessageUpdater            = (*Platform)(nil)
+	_ core.PreviewStarter            = (*Platform)(nil)
+	_ core.PreviewCleaner            = (*Platform)(nil)
+	_ core.PreviewFinishPreference   = (*Platform)(nil)
 	_ core.TypingIndicator           = (*Platform)(nil)
 )

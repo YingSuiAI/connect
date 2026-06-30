@@ -3,6 +3,7 @@ package matrix
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/YingSuiAI/direxio-connect/core"
+	"github.com/gorilla/websocket"
 
 	"maunium.net/go/mautrix"
 	"maunium.net/go/mautrix/event"
@@ -896,12 +898,264 @@ func TestInterfaceCompliance(t *testing.T) {
 	if _, ok := p.(core.MessageUpdater); !ok {
 		t.Error("should implement MessageUpdater")
 	}
+	if _, ok := p.(core.PreviewStarter); !ok {
+		t.Error("should implement PreviewStarter")
+	}
+	if _, ok := p.(core.PreviewCleaner); !ok {
+		t.Error("should implement PreviewCleaner")
+	}
+	if _, ok := p.(core.PreviewFinishPreference); !ok {
+		t.Error("should implement PreviewFinishPreference")
+	}
 	if _, ok := p.(core.TypingIndicator); !ok {
 		t.Error("should implement TypingIndicator")
 	}
 }
 
+func TestDirexioAgentWSDispatchesAgentRoomMessage(t *testing.T) {
+	done := make(chan struct{})
+	asyncErr := make(chan error, 4)
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/_p2p/command":
+			if got := r.Header.Get("Authorization"); got != "Bearer agent-token" {
+				asyncErr <- fmt.Errorf("authorization = %q", got)
+			}
+			var req map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				asyncErr <- err
+			}
+			if req["action"] != realtimeWSTicketAction {
+				asyncErr <- fmt.Errorf("action = %v", req["action"])
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"ticket": "ticket-1"})
+		case "/_p2p/ws":
+			if got := r.URL.Query().Get("ticket"); got != "ticket-1" {
+				asyncErr <- fmt.Errorf("ticket = %q", got)
+			}
+			conn, err := upgrader.Upgrade(w, r, nil)
+			if err != nil {
+				asyncErr <- err
+				return
+			}
+			defer conn.Close()
+			var hello map[string]any
+			if err := conn.ReadJSON(&hello); err != nil {
+				asyncErr <- err
+				return
+			}
+			if hello["type"] != "client.hello" {
+				asyncErr <- fmt.Errorf("hello = %#v", hello)
+			}
+			_ = conn.WriteJSON(map[string]any{"type": "server.ready", "role": "agent"})
+			_ = conn.WriteJSON(map[string]any{
+				"type": "server.event",
+				"event": map[string]any{
+					"seq":      1,
+					"type":     agentRoomMessageEventType,
+					"room_id":  "!agent:example.com",
+					"event_id": "$owner1",
+					"payload": map[string]any{
+						"room_id":          "!agent:example.com",
+						"event_id":         "$owner1",
+						"sender_mxid":      "@owner:example.com",
+						"body":             "hello agent",
+						"msgtype":          "m.text",
+						"origin_server_ts": time.Now().UnixMilli(),
+					},
+				},
+			})
+			select {
+			case <-done:
+			case <-time.After(3 * time.Second):
+			}
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	defer close(done)
+
+	p := &Platform{
+		homeserver:    "http://matrix.example",
+		accessToken:   "matrix-token",
+		userID:        "@agent:example.com",
+		selfUserID:    "@agent:example.com",
+		allowedRoomID: "!agent:example.com",
+		groupReplyAll: true,
+		httpClient:    server.Client(),
+		dedup:         core.MessageDedup{},
+		p2pBaseURL:    server.URL + "/_p2p",
+		p2pAgentToken: "agent-token",
+	}
+	got := make(chan *core.Message, 1)
+	p.handler = func(_ core.Platform, msg *core.Message) {
+		got <- msg
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	runErr := make(chan error, 1)
+	go func() { runErr <- p.runDirexioAgentWSOnce(ctx) }()
+
+	select {
+	case msg := <-got:
+		if msg.Content != "hello agent" || msg.UserID != "@owner:example.com" || msg.ChannelKey != "!agent:example.com" {
+			t.Fatalf("unexpected message: %#v", msg)
+		}
+		rc, ok := msg.ReplyCtx.(replyContext)
+		if !ok || rc.roomID != "!agent:example.com" || rc.messageID != "$owner1" {
+			t.Fatalf("unexpected reply context: %#v", msg.ReplyCtx)
+		}
+	case err := <-asyncErr:
+		t.Fatal(err)
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for websocket agent message")
+	}
+	cancel()
+	select {
+	case err := <-asyncErr:
+		t.Fatal(err)
+	default:
+	}
+	select {
+	case <-runErr:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for websocket loop to exit")
+	}
+}
+
+func TestDirexioAgentStreamPreviewUsesWebSocketFrames(t *testing.T) {
+	done := make(chan struct{})
+	ready := make(chan struct{})
+	frames := make(chan map[string]any, 4)
+	asyncErr := make(chan error, 4)
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/_p2p/command":
+			_ = json.NewEncoder(w).Encode(map[string]any{"ticket": "ticket-1"})
+		case "/_p2p/ws":
+			conn, err := upgrader.Upgrade(w, r, nil)
+			if err != nil {
+				asyncErr <- err
+				return
+			}
+			defer conn.Close()
+			var hello map[string]any
+			if err := conn.ReadJSON(&hello); err != nil {
+				asyncErr <- err
+				return
+			}
+			_ = conn.WriteJSON(map[string]any{"type": "server.ready", "role": "agent"})
+			close(ready)
+			for {
+				var frame map[string]any
+				if err := conn.ReadJSON(&frame); err != nil {
+					return
+				}
+				select {
+				case frames <- frame:
+				case <-done:
+					return
+				}
+			}
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	defer close(done)
+
+	p := &Platform{
+		allowedRoomID: "!agent:example.com",
+		httpClient:    server.Client(),
+		p2pBaseURL:    server.URL + "/_p2p",
+		p2pAgentToken: "agent-token",
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runErr := make(chan error, 1)
+	go func() { runErr <- p.runDirexioAgentWSOnce(ctx) }()
+	select {
+	case <-ready:
+	case err := <-asyncErr:
+		t.Fatal(err)
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for websocket ready")
+	}
+
+	handle, err := p.SendPreviewStart(ctx, replyContext{roomID: "!agent:example.com", messageID: "$owner1"}, "hello")
+	if err != nil {
+		t.Fatalf("SendPreviewStart() error: %v", err)
+	}
+	first := readDirexioStreamTestFrame(t, frames)
+	if first["type"] != "client.agent_stream" || first["room_id"] != "!agent:example.com" || first["stream_id"] != "$owner1" || first["body"] != "hello" || first["replace"] != true {
+		t.Fatalf("unexpected first stream frame: %#v", first)
+	}
+
+	if err := p.UpdateMessage(ctx, handle, "hello world"); err != nil {
+		t.Fatalf("UpdateMessage() error: %v", err)
+	}
+	second := readDirexioStreamTestFrame(t, frames)
+	if second["body"] != "hello world" || second["done"] == true {
+		t.Fatalf("unexpected update stream frame: %#v", second)
+	}
+
+	if err := p.DeletePreviewMessage(ctx, handle); err != nil {
+		t.Fatalf("DeletePreviewMessage() error: %v", err)
+	}
+	final := readDirexioStreamTestFrame(t, frames)
+	if final["done"] != true || final["final_body"] != "hello world" || final["stream_id"] != "$owner1" {
+		t.Fatalf("unexpected final stream frame: %#v", final)
+	}
+	if p.KeepPreviewOnFinish() {
+		t.Fatal("direxio websocket previews should be cleaned before final Matrix reply")
+	}
+
+	cancel()
+	select {
+	case <-runErr:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for websocket loop to exit")
+	}
+}
+
+func TestDecorateOutgoingAgentMessageAddsGatewayStreamMetadata(t *testing.T) {
+	p := &Platform{
+		allowedRoomID: "!agent:example.com",
+		p2pBaseURL:    "http://matrix.example/_p2p",
+		p2pAgentToken: "agent-token",
+	}
+	content := &event.MessageEventContent{MsgType: event.MsgText, Body: "final answer"}
+	decorated, ok := p.decorateOutgoingAgentMessage(
+		replyContext{roomID: "!agent:example.com", messageID: "$owner1"},
+		content,
+		"final answer",
+	).(*agentGatewayMessageContent)
+	if !ok {
+		t.Fatalf("expected decorated message content, got %T", decorated)
+	}
+	if !decorated.AgentGateway || decorated.GatewaySource != agentGatewaySource {
+		t.Fatalf("missing gateway metadata: %#v", decorated)
+	}
+	if decorated.AgentStream["stream_id"] != "$owner1" || decorated.AgentStream["final_body"] != "final answer" || decorated.AgentStream["done"] != true {
+		t.Fatalf("unexpected stream metadata: %#v", decorated.AgentStream)
+	}
+}
+
 // --- test helpers ---
+
+func readDirexioStreamTestFrame(t *testing.T, frames <-chan map[string]any) map[string]any {
+	t.Helper()
+	select {
+	case frame := <-frames:
+		return frame
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for websocket frame")
+		return nil
+	}
+}
 
 type testLifecycleHandler struct {
 	onReady       func(core.Platform)

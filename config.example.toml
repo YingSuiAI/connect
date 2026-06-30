@@ -54,3 +54,8 @@ share_session_in_channel = true
 group_reply_all = true
 auto_join = false
 auto_verify = false
+
+# Optional Direxio Message Server P2P websocket gateway.
+# When configured, websocket drives agent online state and streaming previews.
+p2p_base_url = "https://im.example.com/_p2p"
+agent_token = "p2p_agent_token"
