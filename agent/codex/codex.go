@@ -9,9 +9,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/BurntSushi/toml"
 
@@ -68,7 +70,10 @@ func New(opts map[string]any) (core.Agent, error) {
 	backend = normalizeBackend(backend)
 	appServerURL = normalizeAppServerURL(appServerURL)
 
-	cmd, cliExtraArgs := core.ParseCmdOpts(opts, "codex")
+	cmd, cliExtraArgs := core.ParseCmdOpts(opts, "")
+	if strings.TrimSpace(cmd) == "" {
+		cmd, cliExtraArgs = splitCodexCommand(defaultCodexCommand())
+	}
 
 	if _, err := exec.LookPath(cmd); err != nil {
 		return nil, fmt.Errorf("codex: %q CLI not found in PATH, install with: npm install -g @openai/codex", cmd)
@@ -126,6 +131,74 @@ func normalizeAppServerURL(raw string) string {
 		return "stdio://"
 	}
 	return url
+}
+
+func defaultCodexCommand() string {
+	for _, key := range []string{"DIREXIO_CODEX_COMMAND", "DIREXIO_CC_CONNECT_AGENT_CMD"} {
+		if value := strings.TrimSpace(os.Getenv(key)); value != "" {
+			return value
+		}
+	}
+	if runtime.GOOS == "windows" {
+		if path := windowsLocalAppDataCodexCommand(); path != "" {
+			return path
+		}
+	}
+	return "codex"
+}
+
+func splitCodexCommand(command string) (string, []string) {
+	parts := strings.Fields(strings.TrimSpace(command))
+	if len(parts) == 0 {
+		return "codex", nil
+	}
+	return parts[0], parts[1:]
+}
+
+type codexBinaryCandidate struct {
+	path    string
+	modTime time.Time
+}
+
+func windowsLocalAppDataCodexCommand() string {
+	localAppData := strings.TrimSpace(os.Getenv("LOCALAPPDATA"))
+	if localAppData == "" {
+		return ""
+	}
+	root := filepath.Join(localAppData, "OpenAI", "Codex", "bin")
+	var candidates []codexBinaryCandidate
+	if err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if !strings.EqualFold(filepath.Base(path), "codex.exe") {
+			return nil
+		}
+		info, statErr := d.Info()
+		if statErr != nil || info.IsDir() {
+			return nil
+		}
+		candidates = append(candidates, codexBinaryCandidate{
+			path:    path,
+			modTime: info.ModTime(),
+		})
+		return nil
+	}); err != nil {
+		return ""
+	}
+	if len(candidates) == 0 {
+		return ""
+	}
+	sort.SliceStable(candidates, func(i, j int) bool {
+		if candidates[i].modTime.Equal(candidates[j].modTime) {
+			return candidates[i].path < candidates[j].path
+		}
+		return candidates[i].modTime.After(candidates[j].modTime)
+	})
+	return candidates[0].path
 }
 
 func normalizeMode(raw string) string {
@@ -525,10 +598,26 @@ func (a *Agent) WorkspaceAgentOptions() map[string]any {
 	if a.appServerURL != "" {
 		opts["app_server_url"] = a.appServerURL
 	}
+	if cmd := snapshotCodexCmdPath(a.cmd, a.cliExtraArgs); cmd != "" {
+		opts["cmd"] = cmd
+	}
 	if a.codexHome != "" {
 		opts["codex_home"] = a.codexHome
 	}
 	return opts
+}
+
+func snapshotCodexCmdPath(cmd string, cliExtraArgs []string) string {
+	if strings.TrimSpace(cmd) == "" {
+		cmd = "codex"
+	}
+	if cmd == "codex" && len(cliExtraArgs) == 0 {
+		return ""
+	}
+	if len(cliExtraArgs) == 0 {
+		return cmd
+	}
+	return cmd + " " + strings.Join(cliExtraArgs, " ")
 }
 
 // ── SkillProvider implementation ──────────────────────────────
