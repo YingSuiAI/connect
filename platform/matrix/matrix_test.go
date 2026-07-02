@@ -494,6 +494,8 @@ func TestPlatform_RunConnectionPublishesAgentRoomOnlineStatus(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/_matrix/client/v3/account/whoami":
 			_, _ = w.Write([]byte(`{"user_id":"@agent:matrix.org","device_id":"DEVICE"}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/_matrix/client/v3/keys/query":
+			http.Error(w, "e2ee disabled in status test", http.StatusServiceUnavailable)
 		case r.Method == http.MethodPut && r.URL.Path == "/_matrix/client/v3/rooms/!room:matrix.org/state/io.direxio.agent.status/@agent:matrix.org":
 			var body map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -533,6 +535,82 @@ func TestPlatform_RunConnectionPublishesAgentRoomOnlineStatus(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("runConnection() did not publish online status")
+	}
+
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("runConnection() returned error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("runConnection() did not stop after context cancellation")
+	}
+}
+
+func TestPlatform_RunConnectionRefreshesAgentRoomOnlineStatus(t *testing.T) {
+	oldRefreshInterval := agentRoomStatusRefreshInterval
+	agentRoomStatusRefreshInterval = 20 * time.Millisecond
+	t.Cleanup(func() {
+		agentRoomStatusRefreshInterval = oldRefreshInterval
+	})
+
+	statusEvents := make(chan map[string]any, 4)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/_matrix/client/v3/account/whoami":
+			_, _ = w.Write([]byte(`{"user_id":"@agent:matrix.org","device_id":"DEVICE"}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/_matrix/client/v3/keys/query":
+			http.Error(w, "e2ee disabled in status test", http.StatusServiceUnavailable)
+		case r.Method == http.MethodPost && r.URL.Path == "/_matrix/client/v3/user/@agent:matrix.org/filter":
+			_, _ = w.Write([]byte(`{"filter_id":"test-filter"}`))
+		case r.Method == http.MethodPut && r.URL.Path == "/_matrix/client/v3/rooms/!room:matrix.org/state/io.direxio.agent.status/@agent:matrix.org":
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("decode request body: %v", err)
+			}
+			select {
+			case statusEvents <- body:
+			default:
+			}
+			_, _ = w.Write([]byte(`{"event_id":"$online"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/_matrix/client/v3/sync":
+			<-r.Context().Done()
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	p := &Platform{
+		homeserver:    server.URL,
+		accessToken:   "tok",
+		userID:        "@agent:matrix.org",
+		allowedRoomID: "!room:matrix.org",
+		httpClient:    server.Client(),
+		dedup:         core.MessageDedup{},
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- p.runConnection(ctx)
+	}()
+
+	onlineEvents := 0
+	deadline := time.After(500 * time.Millisecond)
+	for onlineEvents < 2 {
+		select {
+		case got := <-statusEvents:
+			if got["online"] != true {
+				t.Fatalf("online = %v, want true", got["online"])
+			}
+			onlineEvents++
+		case <-deadline:
+			t.Fatalf("published %d online status events, want at least 2", onlineEvents)
+		}
 	}
 
 	cancel()

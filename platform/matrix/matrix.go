@@ -47,6 +47,7 @@ type Platform struct {
 	handler              core.MessageHandler
 	lifecycleHandler     core.PlatformLifecycleHandler
 	cancel               context.CancelFunc
+	statusRefresher      *agentRoomStatusRefresher
 	stopping             bool
 	generation           uint64
 	everConnected        bool
@@ -64,7 +65,26 @@ const (
 	stableWindow             = 10 * time.Second
 )
 
-var agentRoomStatusMatrixEventType = event.Type{Type: agentRoomStatusEventType, Class: event.StateEventType}
+var (
+	agentRoomStatusMatrixEventType = event.Type{Type: agentRoomStatusEventType, Class: event.StateEventType}
+	agentRoomStatusRefreshInterval = 30 * time.Second
+)
+
+type agentRoomStatusRefresher struct {
+	stopOnce sync.Once
+	cancel   context.CancelFunc
+	stopped  chan struct{}
+}
+
+func (r *agentRoomStatusRefresher) Stop() {
+	if r == nil {
+		return
+	}
+	r.stopOnce.Do(func() {
+		r.cancel()
+		<-r.stopped
+	})
+}
 
 func New(opts map[string]any) (core.Platform, error) {
 	homeserver, _ := opts["homeserver"].(string)
@@ -235,6 +255,8 @@ func (p *Platform) runConnection(ctx context.Context) error {
 	if err := p.publishAgentRoomStatus(ctx, true); err != nil {
 		slog.Warn("matrix: publish agent online status failed", "error", core.RedactToken(err.Error(), p.accessToken))
 	}
+	statusRefresher := p.startAgentRoomStatusRefresher(ctx)
+	p.setAgentRoomStatusRefresher(gen, statusRefresher)
 
 	slog.Info("matrix: connected", "user_id", selfUserID)
 	p.emitReady(gen)
@@ -252,6 +274,7 @@ func (p *Platform) runConnection(ctx context.Context) error {
 
 	// Blocks until ctx cancelled or fatal error
 	err = client.SyncWithContext(ctx)
+	p.stopAgentRoomStatusRefresher(gen, statusRefresher)
 
 	// Cleanup
 	if ctx.Err() == nil {
@@ -459,12 +482,6 @@ func (p *Platform) Send(ctx context.Context, rctx any, content string) error {
 }
 
 func (p *Platform) Stop() error {
-	statusCtx, cancelStatus := context.WithTimeout(context.Background(), 5*time.Second)
-	if err := p.publishAgentRoomStatus(statusCtx, false); err != nil {
-		slog.Warn("matrix: publish agent offline status failed", "error", core.RedactToken(err.Error(), p.accessToken))
-	}
-	cancelStatus()
-
 	p.mu.Lock()
 	if p.stopping {
 		p.mu.Unlock()
@@ -473,6 +490,19 @@ func (p *Platform) Stop() error {
 	p.stopping = true
 	cancel := p.cancel
 	p.cancel = nil
+	statusRefresher := p.statusRefresher
+	p.statusRefresher = nil
+	p.mu.Unlock()
+
+	statusRefresher.Stop()
+
+	statusCtx, cancelStatus := context.WithTimeout(context.Background(), 5*time.Second)
+	if err := p.publishAgentRoomStatus(statusCtx, false); err != nil {
+		slog.Warn("matrix: publish agent offline status failed", "error", core.RedactToken(err.Error(), p.accessToken))
+	}
+	cancelStatus()
+
+	p.mu.Lock()
 	p.client = nil
 	p.mu.Unlock()
 
@@ -480,6 +510,71 @@ func (p *Platform) Stop() error {
 		cancel()
 	}
 	return nil
+}
+
+func (p *Platform) startAgentRoomStatusRefresher(ctx context.Context) *agentRoomStatusRefresher {
+	if agentRoomStatusRefreshInterval <= 0 {
+		return nil
+	}
+
+	refreshCtx, cancel := context.WithCancel(ctx)
+	refresher := &agentRoomStatusRefresher{
+		cancel:  cancel,
+		stopped: make(chan struct{}),
+	}
+	go func() {
+		defer close(refresher.stopped)
+
+		ticker := time.NewTicker(agentRoomStatusRefreshInterval)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-refreshCtx.Done():
+				return
+			case <-ticker.C:
+				if refreshCtx.Err() != nil || p.isStopping() {
+					return
+				}
+
+				statusCtx, cancelStatus := context.WithTimeout(refreshCtx, 5*time.Second)
+				if err := p.publishAgentRoomStatus(statusCtx, true); err != nil {
+					slog.Warn("matrix: refresh agent online status failed", "error", core.RedactToken(err.Error(), p.accessToken))
+				}
+				cancelStatus()
+			}
+		}
+	}()
+	return refresher
+}
+
+func (p *Platform) setAgentRoomStatusRefresher(gen uint64, refresher *agentRoomStatusRefresher) {
+	if refresher == nil {
+		return
+	}
+
+	p.mu.Lock()
+	if p.stopping || p.generation != gen {
+		p.mu.Unlock()
+		refresher.Stop()
+		return
+	}
+	p.statusRefresher = refresher
+	p.mu.Unlock()
+}
+
+func (p *Platform) stopAgentRoomStatusRefresher(gen uint64, refresher *agentRoomStatusRefresher) {
+	if refresher == nil {
+		return
+	}
+
+	p.mu.Lock()
+	if p.generation == gen && p.statusRefresher == refresher {
+		p.statusRefresher = nil
+	}
+	p.mu.Unlock()
+
+	refresher.Stop()
 }
 
 func (p *Platform) publishAgentRoomStatus(ctx context.Context, online bool) error {
