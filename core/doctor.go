@@ -52,16 +52,21 @@ type AgentDoctorInfo interface {
 	CLIDisplayName() string // e.g. "Claude", "Codex" (for display in doctor output)
 }
 
+type DoctorOptions struct {
+	DataDir string
+}
+
 // RunDoctorChecks performs all diagnostic checks.
-func RunDoctorChecks(ctx context.Context, agent Agent, platforms []Platform) []DoctorCheckResult {
+func RunDoctorChecks(ctx context.Context, agent Agent, platforms []Platform, opts DoctorOptions) []DoctorCheckResult {
 	var results []DoctorCheckResult
 
 	results = append(results, checkAgentBinary(ctx, agent)...)
 	results = append(results, checkAgentAuth(ctx, agent)...)
 	results = append(results, checkPlatforms(platforms)...)
 	results = append(results, checkSystem(ctx)...)
-	results = append(results, checkDependencies()...)
+	results = append(results, checkDependencies(agent)...)
 	results = append(results, checkNetwork(ctx)...)
+	results = append(results, checkRuntimePaths(opts.DataDir)...)
 
 	if dc, ok := agent.(DoctorChecker); ok {
 		results = append(results, dc.DoctorChecks(ctx)...)
@@ -273,15 +278,21 @@ func checkSystem(ctx context.Context) []DoctorCheckResult {
 	return results
 }
 
-func checkDependencies() []DoctorCheckResult {
+func checkDependencies(agent Agent) []DoctorCheckResult {
 	deps := []struct {
 		bin      string
 		label    string
 		required bool
 	}{
 		{"git", "Git", true},
-		{"sqlite3", "SQLite3", false},
 		{"ffmpeg", "FFmpeg (voice)", false},
+	}
+	if agentNeedsSQLite(agent) {
+		deps = append(deps, struct {
+			bin      string
+			label    string
+			required bool
+		}{"sqlite3", "SQLite3", false})
 	}
 
 	var results []DoctorCheckResult
@@ -306,6 +317,15 @@ func checkDependencies() []DoctorCheckResult {
 		}
 	}
 	return results
+}
+
+func agentNeedsSQLite(agent Agent) bool {
+	switch agent.Name() {
+	case "cursor", "opencode":
+		return true
+	default:
+		return false
+	}
 }
 
 func checkNetwork(ctx context.Context) []DoctorCheckResult {
@@ -378,6 +398,12 @@ func checkNetwork(ctx context.Context) []DoctorCheckResult {
 		})
 	}
 
+	return results
+}
+
+func checkRuntimePaths(dataDir string) []DoctorCheckResult {
+	var results []DoctorCheckResult
+
 	// Check config file
 	if cfgPath := os.Getenv("CC_CONFIG_PATH"); cfgPath != "" {
 		if _, err := os.Stat(cfgPath); err != nil {
@@ -390,8 +416,13 @@ func checkNetwork(ctx context.Context) []DoctorCheckResult {
 	}
 
 	// Check data directory
-	if home, err := os.UserHomeDir(); err == nil {
-		dataDir := filepath.Join(home, ".direxio-connect")
+	dataDir = strings.TrimSpace(dataDir)
+	if dataDir == "" {
+		if home, err := os.UserHomeDir(); err == nil {
+			dataDir = filepath.Join(home, ".direxio-connect")
+		}
+	}
+	if dataDir != "" {
 		if info, err := os.Stat(dataDir); err != nil {
 			results = append(results, DoctorCheckResult{
 				Name:   "Data Directory",

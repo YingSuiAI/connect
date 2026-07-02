@@ -231,7 +231,9 @@ func normalizeReasoningEffort(raw string) string {
 	}
 }
 
-func (a *Agent) Name() string { return "codex" }
+func (a *Agent) Name() string           { return "codex" }
+func (a *Agent) CLIBinaryName() string  { return a.cmd }
+func (a *Agent) CLIDisplayName() string { return "Codex" }
 
 func (a *Agent) SetWorkDir(dir string) {
 	a.mu.Lock()
